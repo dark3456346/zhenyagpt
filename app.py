@@ -289,6 +289,7 @@ async def index():
                 c.execute("UPDATE chats SET title = %s WHERE id = %s", (new_title, chat_id))
                 conn.commit()
                 conn.close()
+            
             add_message(chat_id, "user", user_input)
             max_history_length = 3
             truncated_history = history[-max_history_length:] if len(history) > max_history_length else history
@@ -296,15 +297,17 @@ async def index():
             request_id = str(uuid.uuid4())
             active_requests[request_id] = True
             task = asyncio.create_task(get_io_response(messages, request_id))
-            active_requests[request_id] = task
 
             try:
                 ai_reply = await task
                 if ai_reply and request_id in active_requests:
                     add_message(chat_id, "assistant", ai_reply)
-                    # Возвращаем ответ и обновлённый список чатов
+                    # Обновляем список чатов после каждого сообщения
                     updated_chats = get_all_chats(user_id)
-                    return jsonify({"ai_response": ai_reply, "chats": updated_chats})
+                    return jsonify({
+                        "ai_response": ai_reply,
+                        "chats": {chat_id: {"title": chats[chat_id]["title"], "history": []} for chat_id in updated_chats}
+                    })
                 else:
                     return jsonify({"ai_response": "Ответ был отменен."}), 400
             except asyncio.CancelledError:
