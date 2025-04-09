@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Оставляем стили без изменений */
         * {
             margin: 0;
             padding: 0;
@@ -28,7 +29,6 @@
             line-height: 1.5;
         }
 
-        /* Сайдбар */
         .sidebar {
             width: 260px;
             background: #fff;
@@ -81,7 +81,6 @@
             color: #dc3545;
         }
 
-        /* Основной контейнер */
         .main {
             flex: 1;
             display: flex;
@@ -89,7 +88,6 @@
             background: #fff;
         }
 
-        /* Хедер */
         .header {
             padding: 15px 20px;
             border-bottom: 1px solid #e0e0e0;
@@ -132,7 +130,6 @@
             color: #007bff;
         }
 
-        /* Модальные окна */
         .modal, .style-modal {
             display: none;
             position: fixed;
@@ -251,7 +248,6 @@
             background: #0056b3;
         }
 
-        /* Стили для модального окна выбора стиля */
         .current-style {
             padding: 10px;
             background: #f9f9f9;
@@ -309,7 +305,6 @@
             border: 1px solid #007bff;
         }
 
-        /* Начальная страница */
         .welcome-screen {
             flex: 1;
             display: flex;
@@ -372,7 +367,6 @@
             background: #0056b3;
         }
 
-        /* Чат */
         .chat-container {
             flex: 1;
             padding: 20px;
@@ -421,7 +415,7 @@
             width: 28px;
             height: 28px;
             border-radius: 50%;
-            background: #007bff granic-radius: 50%;
+            background: #007bff;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -462,7 +456,6 @@
             background: #e0e0e0;
         }
 
-        /* Новая анимация загрузки */
         .loading {
             display: none;
             align-items: center;
@@ -512,7 +505,6 @@
             100% { transform: translateX(100%); }
         }
 
-        /* Поле ввода */
         .input-container {
             padding: 15px 20px;
             border-top: 1px solid #e0e0e0;
@@ -559,7 +551,6 @@
             background: #0056b3;
         }
 
-        /* Адаптивность */
         @media (max-width: 768px) {
             .sidebar {
                 width: 100%;
@@ -792,6 +783,29 @@
             document.getElementById('chat-input').style.display = 'block';
         }
 
+        function updateChatList(chats) {
+            const sidebar = document.querySelector('.sidebar');
+            // Удаляем только элементы чатов, оставляя "Выйти" и "Новый чат"
+            const existingChats = sidebar.querySelectorAll('div');
+            existingChats.forEach(chat => chat.remove());
+            // Добавляем чаты в порядке, заданном бэкендом
+            Object.entries(chats).forEach(([chat_id, chat_data]) => {
+                const chatDiv = document.createElement('div');
+                chatDiv.style = 'display: flex; align-items: center; margin-bottom: 8px;';
+                chatDiv.innerHTML = `
+                    <a href="/switch_chat/${chat_id}" class="${chat_id === '{{ active_chat }}' ? 'active' : ''}">
+                        <i class="fas fa-comment"></i> ${chat_data.title}
+                    </a>
+                    <form method="POST" action="/delete_chat/${chat_id}" style="display: inline;">
+                        <button type="submit" class="delete-chat-btn" onclick="return confirm('Удалить этот чат?');">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </form>
+                `;
+                sidebar.appendChild(chatDiv);
+            });
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const welcomeScreen = document.getElementById('welcome-screen');
             const chatContainer = document.getElementById('conversation');
@@ -835,26 +849,7 @@
                     const data = await response.json();
                     loading.style.display = 'none';
                     addAiMessage(data.ai_response);
-                    // Обновляем список чатов после ответа
-                    const chats = data.chats;
-                    const sidebar = document.querySelector('.sidebar');
-                    const chatList = sidebar.querySelectorAll('div');
-                    chatList.forEach(chat => chat.remove());
-                    Object.entries(chats).forEach(([chat_id, chat_data]) => {
-                        const chatDiv = document.createElement('div');
-                        chatDiv.style = 'display: flex; align-items: center; margin-bottom: 8px;';
-                        chatDiv.innerHTML = `
-                            <a href="/switch_chat/${chat_id}" class="${chat_id === '{{ active_chat }}' ? 'active' : ''}">
-                                <i class="fas fa-comment"></i> ${chat_data.title}
-                            </a>
-                            <form method="POST" action="/delete_chat/${chat_id}" style="display: inline;">
-                                <button type="submit" class="delete-chat-btn" onclick="return confirm('Удалить этот чат?');">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </form>
-                        `;
-                        sidebar.appendChild(chatDiv);
-                    });
+                    updateChatList(data.chats); // Обновляем список чатов
                 } catch (error) {
                     console.error('Ошибка:', error);
                     loading.style.display = 'none';
