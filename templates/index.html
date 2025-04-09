@@ -421,7 +421,7 @@
             width: 28px;
             height: 28px;
             border-radius: 50%;
-            background: #007bff;
+            background: #007bff granic-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -587,15 +587,17 @@
         <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Выйти</a>
         <a href="{{ url_for('new_chat') }}"><i class="fas fa-plus"></i> Новый чат</a>
         {% for chat_id, chat_data in chats.items() %}
-            <a href="{{ url_for('switch_chat', chat_id=chat_id) }}" 
-               class="{% if chat_id == active_chat %}active{% endif %}">
-                <i class="fas fa-comment"></i> {{ chat_data.title }}
+            <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                <a href="{{ url_for('switch_chat', chat_id=chat_id) }}" 
+                   class="{% if chat_id == active_chat %}active{% endif %}">
+                    <i class="fas fa-comment"></i> {{ chat_data.title }}
+                </a>
                 <form method="POST" action="{{ url_for('delete_chat_route', chat_id=chat_id) }}" style="display: inline;">
                     <button type="submit" class="delete-chat-btn" onclick="return confirm('Удалить этот чат?');">
                         <i class="fas fa-trash"></i>
                     </button>
                 </form>
-            </a>
+            </div>
         {% endfor %}
     </div>
 
@@ -833,6 +835,26 @@
                     const data = await response.json();
                     loading.style.display = 'none';
                     addAiMessage(data.ai_response);
+                    // Обновляем список чатов после ответа
+                    const chats = data.chats;
+                    const sidebar = document.querySelector('.sidebar');
+                    const chatList = sidebar.querySelectorAll('div');
+                    chatList.forEach(chat => chat.remove());
+                    Object.entries(chats).forEach(([chat_id, chat_data]) => {
+                        const chatDiv = document.createElement('div');
+                        chatDiv.style = 'display: flex; align-items: center; margin-bottom: 8px;';
+                        chatDiv.innerHTML = `
+                            <a href="/switch_chat/${chat_id}" class="${chat_id === '{{ active_chat }}' ? 'active' : ''}">
+                                <i class="fas fa-comment"></i> ${chat_data.title}
+                            </a>
+                            <form method="POST" action="/delete_chat/${chat_id}" style="display: inline;">
+                                <button type="submit" class="delete-chat-btn" onclick="return confirm('Удалить этот чат?');">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        `;
+                        sidebar.appendChild(chatDiv);
+                    });
                 } catch (error) {
                     console.error('Ошибка:', error);
                     loading.style.display = 'none';
