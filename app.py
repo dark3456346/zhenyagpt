@@ -88,15 +88,15 @@ def init_db():
         c.execute('''CREATE TABLE IF NOT EXISTS chats (
                         id TEXT PRIMARY KEY,
                         user_id INTEGER,
-                        title TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        title TEXT NOT NULL DEFAULT 'Без названия',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                      )''')
         
         c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'chats'")
         columns = [row[0] for row in c.fetchall()]
-        if 'user_id' not in columns:
-            c.execute('ALTER TABLE chats ADD COLUMN user_id INTEGER')
-            c.execute("UPDATE chats SET user_id = 1 WHERE user_id IS NULL")
+        if 'last_active' not in columns:
+            c.execute('ALTER TABLE chats ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
         
         c.execute('''CREATE TABLE IF NOT EXISTS messages (
                         id SERIAL PRIMARY KEY,
@@ -151,13 +151,25 @@ def get_all_chats(user_id):
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("SELECT id, title FROM chats WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+        c.execute("SELECT id, title FROM chats WHERE user_id = %s ORDER BY last_active DESC", (user_id,))
         chats = {row[0]: {"title": row[1], "history": []} for row in c.fetchall()}
         conn.close()
         return chats
     except Exception as e:
         logger.error(f"Ошибка получения списка чатов: {str(e)}")
         return {}
+
+def chat_exists(user_id, chat_id):
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM chats WHERE user_id = %s AND id = %s", (user_id, chat_id))
+        exists = c.fetchone() is not None
+        conn.close()
+        return exists
+    except Exception as e:
+        logger.error(f"Ошибка проверки существования чата: {str(e)}")
+        return False
 
 def get_chat_history(chat_id):
     try:
@@ -175,11 +187,32 @@ def add_chat(chat_id, user_id, title="Без названия"):
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO chats (id, user_id, title) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING", (chat_id, user_id, title))
+        c.execute("INSERT INTO chats (id, user_id, title, last_active) VALUES (%s, %s, %s, CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING", 
+                  (chat_id, user_id, title))
         conn.commit()
         conn.close()
     except Exception as e:
         logger.error(f"Ошибка добавления чата: {str(e)}")
+
+def update_chat_title(chat_id, title):
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("UPDATE chats SET title = %s WHERE id = %s", (title[:30], chat_id))  # Ограничиваем до 30 символов
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка обновления названия чата: {str(e)}")
+
+def update_chat_last_active(chat_id):
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = %s", (chat_id,))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка обновления last_active чата: {str(e)}")
 
 def add_message(chat_id, role, content):
     try:
@@ -188,6 +221,7 @@ def add_message(chat_id, role, content):
         c.execute("INSERT INTO messages (chat_id, role, content) VALUES (%s, %s, %s)", (chat_id, role, content))
         conn.commit()
         conn.close()
+        update_chat_last_active(chat_id)
     except Exception as e:
         logger.error(f"Ошибка добавления сообщения: {str(e)}")
 
@@ -196,7 +230,7 @@ def reset_chat(chat_id):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
-        c.execute("UPDATE chats SET title = 'Без названия' WHERE id = %s", (chat_id,))
+        c.execute("UPDATE chats SET title = 'Без названия', last_active = CURRENT_TIMESTAMP WHERE id = %s", (chat_id,))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -246,6 +280,17 @@ async def get_io_response(messages, request_id):
             logger.error(f"Ошибка при запросе к API: {str(e)}")
             return f"Ошибка при запросе к API: {str(e)}"
 
+async def generate_chat_title(user_input, request_id):
+    prompt = {
+        "role": "system",
+        "content": "Ты — помощник, который генерирует короткие названия для чатов (до 30 символов) на основе первого сообщения пользователя. Название должно быть понятным и отражать суть сообщения. Ответь только названием, без лишнего текста."
+    }
+    messages = [prompt, {"role": "user", "content": f"Сгенерируй название для чата на основе этого сообщения: {user_input}"}]
+    title = await get_io_response(messages, request_id)
+    if not title or "Ошибка" in title:
+        return user_input[:30]  # Запасной вариант, если ИИ не справился
+    return title[:30]  # Ограничиваем до 30 символов
+
 @app.before_request
 def require_login():
     if request.endpoint not in ['login', 'register', 'static'] and 'user_id' not in session:
@@ -290,6 +335,7 @@ def login():
             if user and check_password_hash(user[1], password):
                 session['user_id'] = user[0]
                 session['username'] = username
+                session['chats'] = get_all_chats(user[0])
                 logger.info(f"Пользователь {username} вошёл в систему")
                 return redirect(url_for('index'))
             logger.warning(f"Неудачная попытка входа для {username}")
@@ -304,6 +350,7 @@ def logout():
     session.pop('user_id', None)
     session.pop('username', None)
     session.pop('active_chat', None)
+    session.pop('chats', None)
     logger.info("Пользователь вышел из системы")
     return redirect(url_for('login'))
 
@@ -320,18 +367,17 @@ def change_style():
 async def index():
     try:
         user_id = session['user_id']
-        if 'active_chat' not in session:
+        if 'chats' not in session:
+            session['chats'] = get_all_chats(user_id)
+
+        if 'active_chat' not in session or not chat_exists(user_id, session['active_chat']):
             chat_id = str(uuid.uuid4())
             add_chat(chat_id, user_id)
             session['active_chat'] = chat_id
+            session['chats'][chat_id] = {"title": "Без названия", "history": []}
             logger.info(f"Создан новый чат {chat_id} для пользователя {user_id}")
 
-        chat_id = session.get('active_chat')
-        chats = get_all_chats(user_id)
-        if chat_id not in chats:
-            logger.warning(f"Чат {chat_id} не найден, создаём новый")
-            return redirect(url_for("new_chat"))
-
+        chat_id = session['active_chat']
         history = get_chat_history(chat_id)
         current_style = get_user_style(user_id)
 
@@ -341,18 +387,21 @@ async def index():
                 return jsonify({"ai_response": "Пустой запрос."}), 400
 
             logger.debug(f"Получен запрос от пользователя {user_id}: {user_input}")
-            if not history:
-                new_title = user_input[:30] + "..." if len(user_input) > 30 else user_input
-                try:
-                    conn = get_db_connection()
-                    c = conn.cursor()
-                    c.execute("UPDATE chats SET title = %s WHERE id = %s", (new_title, chat_id))
-                    conn.commit()
-                    conn.close()
-                except Exception as e:
-                    logger.error(f"Ошибка обновления названия чата: {str(e)}")
-
             add_message(chat_id, "user", user_input)
+
+            # Генерируем название чата от ИИ, если это первое сообщение
+            if not history:
+                request_id = str(uuid.uuid4())
+                active_requests[request_id] = True
+                title_task = asyncio.create_task(generate_chat_title(user_input, request_id))
+                title = await title_task
+                if title and request_id in active_requests:
+                    update_chat_title(chat_id, title)
+                    session['chats'][chat_id]['title'] = title
+                if request_id in active_requests:
+                    del active_requests[request_id]
+
+            # Обрабатываем основной запрос
             max_history_length = 3
             truncated_history = history[-max_history_length:] if len(history) > max_history_length else history
             messages = [STYLES[current_style]] + truncated_history + [{"role": "user", "content": user_input}]
@@ -365,9 +414,9 @@ async def index():
                 ai_reply = await task
                 if ai_reply and request_id in active_requests:
                     add_message(chat_id, "assistant", ai_reply)
-                    updated_chats = get_all_chats(user_id)
+                    session['chats'] = get_all_chats(user_id)  # Обновляем кэш
                     logger.debug(f"Успешный ответ для {request_id}: {ai_reply[:50]}...")
-                    return jsonify({"ai_response": ai_reply, "chats": updated_chats})
+                    return jsonify({"ai_response": ai_reply, "chats": session['chats']})
                 else:
                     logger.info(f"Запрос {request_id} отменён или не выполнен")
                     return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
@@ -378,7 +427,7 @@ async def index():
                 if request_id in active_requests:
                     del active_requests[request_id]
 
-        return render_template("index.html", history=history, chats=chats, active_chat=chat_id, 
+        return render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id, 
                               current_style=current_style, styles=STYLES.keys())
     except Exception as e:
         logger.error(f"Ошибка в маршруте index: {str(e)}")
@@ -390,38 +439,46 @@ def new_chat():
     chat_id = str(uuid.uuid4())
     add_chat(chat_id, user_id)
     session["active_chat"] = chat_id
+    session['chats'][chat_id] = {"title": "Без названия", "history": []}
     logger.info(f"Создан новый чат {chat_id} для пользователя {user_id}")
     return redirect(url_for("index"))
 
 @app.route("/switch_chat/<chat_id>")
 def switch_chat(chat_id):
     user_id = session['user_id']
-    chats = get_all_chats(user_id)
-    if chat_id in chats:
+    if chat_exists(user_id, chat_id):
         session["active_chat"] = chat_id
+        update_chat_last_active(chat_id)
+        session['chats'] = get_all_chats(user_id)
         logger.info(f"Переключение на чат {chat_id} для пользователя {user_id}")
+    else:
+        logger.warning(f"Чат {chat_id} не существует, создаём новый")
+        return redirect(url_for("new_chat"))
     return redirect(url_for("index"))
 
 @app.route("/reset_chat/<chat_id>", methods=["POST"])
 def reset_chat_route(chat_id):
     user_id = session['user_id']
-    chats = get_all_chats(user_id)
-    if chat_id in chats:
+    if chat_exists(user_id, chat_id):
         reset_chat(chat_id)
+        session['chats'][chat_id]['title'] = "Без названия"
+        session['chats'] = get_all_chats(user_id)
         logger.info(f"Чат {chat_id} сброшен для пользователя {user_id}")
     return redirect(url_for("index"))
 
 @app.route("/delete_chat/<chat_id>", methods=["POST"])
 def delete_chat_route(chat_id):
     user_id = session['user_id']
-    chats = get_all_chats(user_id)
-    if chat_id in chats:
+    if chat_exists(user_id, chat_id):
         delete_chat(chat_id)
         if session["active_chat"] == chat_id:
             new_chat_id = str(uuid.uuid4())
             add_chat(new_chat_id, user_id)
             session["active_chat"] = new_chat_id
-            logger.info(f"Чат {chat_id} удалён, создан новый {new_chat_id} для пользователя {user_id}")
+            session['chats'][new_chat_id] = {"title": "Без названия", "history": []}
+        session['chats'].pop(chat_id, None)
+        session['chats'] = get_all_chats(user_id)
+        logger.info(f"Чат {chat_id} удалён для пользователя {user_id}")
     return redirect(url_for("index"))
 
 @app.route("/stop_response", methods=["POST"])
