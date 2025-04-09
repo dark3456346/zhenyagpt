@@ -270,20 +270,33 @@ async def index():
     # Если активного чата нет, создаём новый
     if not chat_id:
         chat_id = str(uuid.uuid4())
+        add_chat(chat_id, user_id)
         session['active_chat'] = chat_id
-        session['pending_chat'] = True
 
-    chats = get_all_chats(user_id)  # Чаты из базы
-    history = get_chat_history(chat_id) if chat_id in chats else []  # История только для сохранённых чатов
+    # Получаем все чаты из базы
+    all_chats = get_all_chats(user_id)
+    
+    # Фильтруем чаты: показываем только те, у которых есть история или это активный чат
+    chats = {}
+    for cid, cdata in all_chats.items():
+        history = get_chat_history(cid)
+        if history or cid == chat_id:  # Показываем чат, если есть сообщения или он активный
+            chats[cid] = cdata
+
+    history = get_chat_history(chat_id) if chat_id in all_chats else []
     current_style = get_user_style(user_id)
 
     if request.method == "POST":
         user_input = request.form.get("user_input", "").strip()
         if user_input:
-            # Если это первый запрос и чат ещё не сохранён
-            if 'pending_chat' in session and session['pending_chat']:
-                add_chat(chat_id, user_id, user_input[:30] + "..." if len(user_input) > 30 else user_input)
-                session.pop('pending_chat')  # Удаляем флаг
+            # Обновляем заголовок только при первом сообщении
+            if not history:
+                conn = get_db_connection()
+                c = conn.cursor()
+                c.execute("UPDATE chats SET title = %s WHERE id = %s",
+                          (user_input[:30] + "..." if len(user_input) > 30 else user_input, chat_id))
+                conn.commit()
+                conn.close()
             add_message(chat_id, "user", user_input)
             max_history_length = 3
             truncated_history = history[-max_history_length:] if len(history) > max_history_length else history
@@ -315,8 +328,8 @@ async def index():
 def new_chat():
     user_id = session['user_id']
     chat_id = str(uuid.uuid4())
+    add_chat(chat_id, user_id)  # Создаём чат сразу с заголовком "Без названия"
     session["active_chat"] = chat_id
-    session["pending_chat"] = True  # Флаг, что чат ещё не сохранён
     return redirect(url_for("index"))
 
 @app.route("/switch_chat/<chat_id>")
