@@ -4,7 +4,6 @@ import asyncio
 import re
 import uuid
 import psycopg2
-from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import logging
@@ -67,7 +66,6 @@ STYLES = {
 
 active_requests = {}
 
-# Функция для подключения к PostgreSQL
 def get_db_connection():
     try:
         conn = psycopg2.connect(os.getenv("DATABASE_URL"))
@@ -229,7 +227,7 @@ async def get_io_response(messages, request_id):
     }
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=60)) as response:
+            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 if request_id not in active_requests:
                     logger.info(f"Запрос {request_id} был отменён")
                     return None
@@ -443,5 +441,6 @@ def clear_session():
     return redirect(url_for("login"))
 
 if __name__ == "__main__":
+    import uvicorn
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True, threaded=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="debug")
