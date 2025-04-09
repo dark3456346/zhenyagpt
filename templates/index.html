@@ -3,74 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ZhenyaGPT - профессиональный AI-помощник">
+    <meta name="author" content="ZhenyaGPT Team">
     <title>ZhenyaGPT</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/monokai-sublime.min.css">
     <link rel="icon" href="{{ url_for('static', filename='images/logo.png') }}" type="image/png">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: 'Inter', sans-serif;
         }
 
         body {
-            background: #0a0a0a;
-            color: #e6e6e6;
+            background: #f5f6f5;
+            color: #333;
             display: flex;
             height: 100vh;
             overflow: hidden;
-            line-height: 1.7;
+            font-size: 16px;
+            line-height: 1.5;
         }
 
         /* Сайдбар */
         .sidebar {
-            width: 280px;
-            background: linear-gradient(180deg, #121212 0%, #1a1a1a 100%);
-            padding: 30px 20px;
-            border-right: 1px solid #2a2a2a;
+            width: 260px;
+            background: #fff;
+            padding: 20px;
+            border-right: 1px solid #e0e0e0;
             overflow-y: auto;
-            transition: width 0.3s ease;
-            box-shadow: 2px 0 15px rgba(0, 0, 0, 0.5);
-        }
-
-        .sidebar:hover {
-            width: 300px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
 
         .sidebar a {
             display: flex;
             align-items: center;
-            padding: 12px 18px;
-            color: #b8b8b8;
+            padding: 12px 16px;
+            color: #555;
             text-decoration: none;
-            border-radius: 12px;
-            margin-bottom: 10px;
-            transition: all 0.3s ease;
-            font-size: 15px;
-            position: relative;
-            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            font-weight: 500;
         }
 
         .sidebar a:hover {
-            background: linear-gradient(90deg, #2a2a2a, #3a3a3a);
-            color: #fff;
-            transform: translateX(5px);
-            box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
+            background: #f0f0f0;
+            color: #007bff;
         }
 
         .sidebar a.active {
-            background: linear-gradient(90deg, #1e90ff, #00ddeb);
+            background: #007bff;
             color: #fff;
             font-weight: 600;
-            box-shadow: 0 0 15px rgba(30, 144, 255, 0.5);
         }
 
         .sidebar a i {
-            margin-right: 12px;
+            margin-right: 10px;
             font-size: 16px;
         }
 
@@ -78,16 +71,14 @@
             margin-left: auto;
             background: none;
             border: none;
-            color: #b8b8b8;
+            color: #888;
             cursor: pointer;
-            padding: 0 12px;
-            font-size: 14px;
-            transition: color 0.3s ease, transform 0.2s ease;
+            padding: 0 10px;
+            transition: color 0.2s ease;
         }
 
         .delete-chat-btn:hover {
-            color: #ff5555;
-            transform: scale(1.2);
+            color: #dc3545;
         }
 
         /* Основной контейнер */
@@ -95,68 +86,50 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: linear-gradient(180deg, #0a0a0a 0%, #141414 100%);
-            position: relative;
+            background: #fff;
         }
 
         /* Хедер */
         .header {
-            padding: 20px;
-            text-align: center;
-            border-bottom: 1px solid #2a2a2a;
-            background: linear-gradient(180deg, #1a1a1a, #121212);
-            position: relative;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            padding: 15px 20px;
+            border-bottom: 1px solid #e0e0e0;
+            background: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
         .header h1 {
-            font-size: 32px;
-            color: #fff;
-            font-weight: 700;
-            letter-spacing: 2px;
-            background: linear-gradient(90deg, #1e90ff, #00ddeb);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            font-size: 24px;
+            font-weight: 600;
+            color: #007bff;
         }
 
         .header p {
             font-size: 14px;
-            color: #a8a8a8;
-            margin-top: 8px;
-            font-style: italic;
+            color: #666;
+            margin-left: 10px;
         }
 
-        .header-buttons-left, .header-buttons-right {
-            position: absolute;
-            top: 20px;
+        .header-buttons {
             display: flex;
-            gap: 12px;
-        }
-
-        .header-buttons-left {
-            left: 20px;
-        }
-
-        .header-buttons-right {
-            right: 20px;
+            gap: 10px;
         }
 
         .settings-btn, .style-btn {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #b8b8b8;
-            font-size: 18px;
+            background: #f0f0f0;
+            border: none;
+            color: #555;
+            font-size: 16px;
             cursor: pointer;
             padding: 8px;
-            border-radius: 50%;
-            transition: all 0.3s ease;
+            border-radius: 6px;
+            transition: all 0.2s ease;
         }
 
         .settings-btn:hover, .style-btn:hover {
-            color: #1e90ff;
-            background: rgba(255, 255, 255, 0.1);
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
-            transform: scale(1.1);
+            background: #e0e0e0;
+            color: #007bff;
         }
 
         /* Модальные окна */
@@ -167,7 +140,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.5);
             z-index: 1000;
             justify-content: center;
             align-items: center;
@@ -180,402 +153,285 @@
         }
 
         .modal-content, .style-modal-content {
-            background: linear-gradient(135deg, #1a1a1a, #121212);
-            backdrop-filter: blur(15px);
-            padding: 30px;
-            border-radius: 20px;
-            width: 500px;
+            background: #fff;
+            padding: 20px;
+            border-radius: 12px;
+            width: 400px;
             max-width: 90%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             position: relative;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7), 0 0 20px rgba(30, 144, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            transform: scale(0.9);
-            transition: transform 0.3s ease;
-        }
-
-        .style-modal-content {
-            width: 450px;
-            padding: 25px;
-        }
-
-        .modal.show .modal-content, .style-modal.show .style-modal-content {
-            transform: scale(1);
         }
 
         .modal-content h2, .style-modal-content h2 {
-            font-size: 28px;
-            color: #fff;
-            margin-bottom: 20px;
+            font-size: 20px;
             font-weight: 600;
-            background: linear-gradient(90deg, #1e90ff, #00ddeb);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            color: #333;
+            margin-bottom: 15px;
         }
 
         .close-btn {
             position: absolute;
-            top: 15px;
-            right: 15px;
-            background: rgba(255, 255, 255, 0.05);
+            top: 10px;
+            right: 10px;
+            background: none;
             border: none;
-            color: #b8b8b8;
+            color: #888;
             font-size: 18px;
             cursor: pointer;
-            padding: 8px;
-            border-radius: 50%;
-            transition: all 0.3s ease;
+            padding: 5px;
+            transition: color 0.2s ease;
         }
 
         .close-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            color: #ff5555;
-            transform: rotate(90deg);
+            color: #333;
         }
 
         .settings-section {
-            margin-bottom: 25px;
+            margin-bottom: 20px;
         }
 
         .settings-section h3 {
-            font-size: 16px;
-            color: #a8a8a8;
-            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+            margin-bottom: 10px;
             font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 1px;
         }
 
         .settings-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 15px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            transition: background 0.3s ease;
-            border-radius: 8px;
-        }
-
-        .settings-item:hover {
-            background: rgba(255, 255, 255, 0.05);
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
         }
 
         .settings-item label {
-            font-size: 15px;
-            color: #e6e6e6;
-            font-weight: 400;
-        }
-
-        .settings-item select {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 8px 12px;
-            color: #e6e6e6;
             font-size: 14px;
-            outline: none;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .settings-item select:hover,
-        .settings-item select:focus {
-            border-color: #1e90ff;
-            background: rgba(255, 255, 255, 0.1);
-            box-shadow: 0 0 8px rgba(30, 144, 255, 0.3);
+            color: #333;
         }
 
         .settings-item span {
-            color: #b8b8b8;
+            color: #007bff;
             font-size: 14px;
             cursor: pointer;
-            transition: color 0.3s ease;
         }
 
-        .settings-item span:hover {
-            color: #1e90ff;
-        }
-
-        .modal-footer, .style-modal-footer {
+        .modal-footer {
             display: flex;
             justify-content: flex-end;
-            margin-top: 30px;
-            gap: 12px;
+            gap: 10px;
+            margin-top: 20px;
         }
 
-        .modal-footer button, .style-modal-footer button {
-            padding: 12px 24px;
+        .modal-footer button {
+            padding: 8px 16px;
             border: none;
-            border-radius: 12px;
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 500;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
         }
 
-        .modal-footer .delete-all-btn {
-            background: linear-gradient(135deg, #ff5555, #ff3333);
+        .delete-all-btn {
+            background: #dc3545;
             color: #fff;
-            box-shadow: 0 0 10px rgba(255, 85, 85, 0.5);
         }
 
-        .modal-footer .delete-all-btn:hover {
-            background: linear-gradient(135deg, #ff3333, #ff1111);
-            transform: translateY(-2px);
-            box-shadow: 0 0 15px rgba(255, 85, 85, 0.7);
+        .delete-all-btn:hover {
+            background: #c82333;
         }
 
-        .modal-footer .close-modal-btn, .style-modal-footer .close-style-modal-btn {
-            background: linear-gradient(135deg, #1e90ff, #00ddeb);
+        .close-modal-btn, .close-style-modal-btn {
+            background: #007bff;
             color: #fff;
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
         }
 
-        .modal-footer .close-modal-btn:hover, .style-modal-footer .close-style-modal-btn:hover {
-            background: linear-gradient(135deg, #00ddeb, #1e90ff);
-            transform: translateY(-2px);
-            box-shadow: 0 0 15px rgba(30, 144, 255, 0.7);
+        .close-modal-btn:hover, .close-style-modal-btn:hover {
+            background: #0056b3;
         }
 
         /* Стили для модального окна выбора стиля */
         .current-style {
-            background: rgba(255, 255, 255, 0.03);
-            padding: 15px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            margin-bottom: 15px;
         }
 
         .current-style p {
             font-size: 14px;
-            color: #a8a8a8;
+            color: #666;
         }
 
         .current-style span {
-            color: #1e90ff;
+            color: #007bff;
             font-weight: 500;
         }
 
         .style-options {
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 10px;
         }
 
         .style-option {
-            display: flex;
-            align-items: center;
-            padding: 15px;
-            background: rgba(255, 255, 255, 0.02);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            background: #f9f9f9;
+            border-radius: 8px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
         }
 
         .style-option:hover {
-            background: rgba(255, 255, 255, 0.05);
-            transform: translateY(-3px);
-            box-shadow: 0 0 15px rgba(30, 144, 255, 0.3);
+            background: #f0f0f0;
         }
 
         .style-option i {
-            font-size: 24px;
-            margin-right: 15px;
-            color: #b8b8b8;
-            transition: color 0.3s ease;
-        }
-
-        .style-option:hover i {
-            color: #1e90ff;
-        }
-
-        .style-option-content {
-            flex: 1;
+            margin-right: 10px;
+            color: #555;
         }
 
         .style-option-content h4 {
-            font-size: 16px;
-            color: #e6e6e6;
+            font-size: 14px;
+            color: #333;
             margin-bottom: 5px;
             font-weight: 500;
         }
 
         .style-option-content p {
-            font-size: 13px;
-            color: #a8a8a8;
-            line-height: 1.4;
+            font-size: 12px;
+            color: #666;
         }
 
         .style-option.selected {
-            background: rgba(30, 144, 255, 0.1);
-            border-color: #1e90ff;
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
-        }
-
-        .style-option.selected i {
-            color: #1e90ff;
+            background: #e6f0ff;
+            border: 1px solid #007bff;
         }
 
         /* Начальная страница */
         .welcome-screen {
+            flex: 1;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            flex: 1;
-            text-align: center;
-            padding: 30px;
-            background: linear-gradient(180deg, #0a0a0a, #141414);
+            padding: 20px;
+            background: #fff;
         }
 
         .welcome-screen h2 {
-            font-size: 36px;
-            color: #fff;
-            margin-bottom: 15px;
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 10px;
             font-weight: 600;
-            background: linear-gradient(90deg, #1e90ff, #00ddeb);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
         }
 
         .welcome-screen p {
             font-size: 16px;
-            color: #a8a8a8;
-            margin-bottom: 30px;
+            color: #666;
+            margin-bottom: 20px;
         }
 
         .welcome-screen .input-form {
             display: flex;
-            gap: 15px;
-            align-items: flex-end;
-            max-width: 800px;
+            gap: 10px;
             width: 100%;
+            max-width: 600px;
         }
 
         .welcome-screen .input-form textarea {
             flex: 1;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 15px;
-            color: #e6e6e6;
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            color: #333;
             resize: none;
-            min-height: 60px;
-            max-height: 180px;
+            min-height: 50px;
             outline: none;
-            transition: all 0.3s ease;
-            font-size: 15px;
+            transition: border-color 0.2s ease;
+            font-size: 14px;
         }
 
         .welcome-screen .input-form textarea:focus {
-            border-color: #1e90ff;
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+            border-color: #007bff;
         }
 
         .welcome-screen .input-form button {
-            background: linear-gradient(135deg, #1e90ff, #00ddeb);
+            background: #007bff;
             border: none;
-            padding: 15px 30px;
+            padding: 12px 20px;
             color: #fff;
-            border-radius: 12px;
+            border-radius: 8px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+            transition: background 0.2s ease;
         }
 
         .welcome-screen .input-form button:hover {
-            background: linear-gradient(135deg, #00ddeb, #1e90ff);
-            transform: translateY(-3px);
-            box-shadow: 0 0 15px rgba(30, 144, 255, 0.7);
+            background: #0056b3;
         }
 
         /* Чат */
         .chat-container {
             flex: 1;
-            padding: 30px;
+            padding: 20px;
             overflow-y: auto;
             display: none;
             flex-direction: column;
-            gap: 20px;
-            background: linear-gradient(180deg, #0a0a0a, #141414);
+            gap: 15px;
+            background: #fff;
         }
 
-        .chat-container::-webkit-scrollbar,
-        .sidebar::-webkit-scrollbar {
-            width: 8px;
+        .chat-container::-webkit-scrollbar {
+            width: 6px;
         }
 
-        .chat-container::-webkit-scrollbar-track,
-        .sidebar::-webkit-scrollbar-track {
-            background: #1a1a1a;
-            border-radius: 4px;
+        .chat-container::-webkit-scrollbar-track {
+            background: #f0f0f0;
         }
 
-        .chat-container::-webkit-scrollbar-thumb,
-        .sidebar::-webkit-scrollbar-thumb {
-            background: #454545;
-            border-radius: 4px;
-            transition: background 0.3s ease;
-        }
-
-        .chat-container::-webkit-scrollbar-thumb:hover,
-        .sidebar::-webkit-scrollbar-thumb:hover {
-            background: #1e90ff;
-        }
-
-        .chat-container,
-        .sidebar {
-            scrollbar-width: thin;
-            scrollbar-color: #454545 #1a1a1a;
+        .chat-container::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 3px;
         }
 
         .message {
-            max-width: 70%;
-            padding: 15px 20px;
-            border-radius: 16px;
-            word-wrap: break-word;
-            font-size: 15px;
-            position: relative;
-            transition: all 0.3s ease;
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
             display: flex;
             align-items: flex-start;
             gap: 10px;
-        }
-
-        .message:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            background: #f9f9f9;
         }
 
         .user-message {
-            background: linear-gradient(135deg, #454545, #555555);
+            background: #e6f0ff;
             align-self: flex-end;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 0 10px rgba(255, 255, 255, 0.1);
         }
 
         .ai-message {
-            background: linear-gradient(135deg, #1a1a1a, #222222);
+            background: #f0f0f0;
             align-self: flex-start;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.2);
         }
 
         .message-avatar {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
-            background: #1e90ff;
+            background: #007bff;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 14px;
             color: #fff;
             flex-shrink: 0;
         }
 
         .user-message .message-avatar {
-            background: #ff5555;
+            background: #dc3545;
         }
 
         .message-content {
@@ -583,61 +439,46 @@
         }
 
         .ai-message pre {
-            background: #222222;
-            padding: 15px;
-            border-radius: 10px;
+            background: #222;
+            padding: 10px;
+            border-radius: 6px;
             overflow-x: auto;
-            margin: 12px 0;
-            border: 1px solid #333333;
-        }
-
-        .ai-message code {
-            font-family: 'JetBrains Mono', 'Consolas', monospace;
-            font-size: 14px;
-        }
-
-        .message-wrapper {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
+            margin: 10px 0;
         }
 
         .copy-btn {
-            margin-top: 8px;
-            background: linear-gradient(135deg, #454545, #555555);
+            margin-top: 5px;
+            background: #f0f0f0;
             border: none;
-            padding: 6px 12px;
-            color: #e6e6e6;
-            border-radius: 8px;
+            padding: 5px 10px;
+            color: #555;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 12px;
-            transition: all 0.3s ease;
+            transition: background 0.2s ease;
         }
 
         .copy-btn:hover {
-            background: linear-gradient(135deg, #1e90ff, #00ddeb);
-            transform: scale(1.05);
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+            background: #e0e0e0;
         }
 
         .loading {
             display: none;
             align-items: center;
-            gap: 12px;
-            color: #a8a8a8;
+            gap: 8px;
+            color: #666;
             align-self: center;
-            margin: 25px 0;
-            font-size: 15px;
-            font-style: italic;
+            margin: 20px 0;
+            font-size: 14px;
         }
 
         .spinner {
-            width: 20px;
-            height: 20px;
-            border: 3px solid #a8a8a8;
-            border-top: 3px solid #1e90ff;
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ccc;
+            border-top: 2px solid #007bff;
             border-radius: 50%;
-            animation: spin 1s ease-in-out infinite;
+            animation: spin 1s linear infinite;
         }
 
         @keyframes spin {
@@ -647,110 +488,73 @@
 
         /* Поле ввода */
         .input-container {
-            padding: 20px;
-            border-top: 1px solid #2a2a2a;
-            background: linear-gradient(180deg, #1a1a1a, #121212);
-            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+            padding: 15px 20px;
+            border-top: 1px solid #e0e0e0;
+            background: #fff;
             display: none;
         }
 
         .input-container .input-form {
             display: flex;
-            gap: 15px;
-            align-items: flex-end;
-            max-width: 800px;
+            gap: 10px;
+            max-width: 600px;
             margin: 0 auto;
         }
 
         .input-container .input-form textarea {
             flex: 1;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 15px;
-            color: #e6e6e6;
+            background: #f9f9f9;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            color: #333;
             resize: none;
-            min-height: 60px;
-            max-height: 180px;
+            min-height: 50px;
             outline: none;
-            transition: all 0.3s ease;
-            font-size: 15px;
+            transition: border-color 0.2s ease;
+            font-size: 14px;
         }
 
         .input-container .input-form textarea:focus {
-            border-color: #1e90ff;
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+            border-color: #007bff;
         }
 
         .input-container .input-form button {
-            background: linear-gradient(135deg, #1e90ff, #00ddeb);
+            background: #007bff;
             border: none;
-            padding: 15px 30px;
+            padding: 12px 20px;
             color: #fff;
-            border-radius: 12px;
+            border-radius: 8px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 10px rgba(30, 144, 255, 0.5);
+            transition: background 0.2s ease;
         }
 
         .input-container .input-form button:hover {
-            background: linear-gradient(135deg, #00ddeb, #1e90ff);
-            transform: translateY(-3px);
-            box-shadow: 0 0 15px rgba(30, 144, 255, 0.7);
+            background: #0056b3;
         }
 
-        .control-buttons {
-            display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .reset-button, .stop-button {
-            background: linear-gradient(135deg, #454545, #555555);
-            border: none;
-            padding: 12px 20px;
-            color: #e6e6e6;
-            border-radius: 12px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 15px;
-            font-weight: 500;
-        }
-
-        .reset-button:hover {
-            background: linear-gradient(135deg, #ff5555, #ff3333);
-            color: #fff;
-            transform: translateY(-3px);
-            box-shadow: 0 0 15px rgba(255, 85, 85, 0.7);
-        }
-
-        .stop-button:hover {
-            background: linear-gradient(135deg, #1e90ff, #00ddeb);
-            color: #fff;
-            transform: translateY(-3px);
-            box-shadow: 0 0 15px rgba(30, 144, 255, 0.7);
-        }
-
-        .hljs {
-            background: #222222 !important;
-            padding: 15px;
-            border-radius: 10px;
-            border: 1px solid #333333;
-        }
-
-        .typing {
-            overflow: hidden;
-            white-space: nowrap;
-            animation: typing 0.6s steps(40, end) forwards;
-        }
-
-        @keyframes typing {
-            from { width: 0; }
-            to { width: 100%; }
+        /* Адаптивность */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                position: fixed;
+                bottom: 0;
+                z-index: 1000;
+                padding: 10px;
+                box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+            }
+            .main {
+                margin-bottom: 60px;
+            }
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .header-buttons {
+                margin-top: 10px;
+            }
         }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="sidebar">
@@ -771,30 +575,25 @@
 
     <div class="main">
         <div class="header">
-            <h1>ZhenyaGPT</h1>
-            <p>Добро пожаловать, {{ session.username }}! Теперь начнем!</p>
-            <div class="header-buttons-left">
-                <button class="style-btn" id="style-btn"><i class="fas fa-robot"></i></button>
+            <div style="display: flex; align-items: center;">
+                <h1>ZhenyaGPT</h1>
+                <p>Добро пожаловать, {{ session.username }}!</p>
             </div>
-            <div class="header-buttons-right">
+            <div class="header-buttons">
+                <button class="style-btn" id="style-btn"><i class="fas fa-robot"></i></button>
                 <button class="settings-btn" id="settings-btn"><i class="fas fa-ellipsis-v"></i></button>
             </div>
         </div>
 
-        <!-- Начальная страница -->
         <div class="welcome-screen" id="welcome-screen">
-            <h2>Добро пожаловать в ZhenyaGPT.</h2>
-            <p>Чем я могу помочь сегодня?</p>
+            <h2>Добро пожаловать в ZhenyaGPT</h2>
+            <p>Чем могу помочь вам сегодня?</p>
             <form class="input-form" id="welcome-form">
-                <textarea name="user_input" 
-                          placeholder="Задай вопрос, если осмелишься" 
-                          rows="1" 
-                          autofocus></textarea>
+                <textarea name="user_input" placeholder="Введите ваш вопрос" rows="1" autofocus></textarea>
                 <button type="submit"><i class="fas fa-arrow-right"></i></button>
             </form>
         </div>
 
-        <!-- Контейнер чата -->
         <div class="chat-container" id="conversation">
             {% for message in history %}
                 {% if message.role == 'user' %}
@@ -812,29 +611,23 @@
                 {% endif %}
             {% endfor %}
             <div class="loading" id="loading">
-                <span>Пишу тебе ответ...</span>
+                <span>Обработка...</span>
                 <div class="spinner"></div>
             </div>
         </div>
 
-        <!-- Поле ввода для чата -->
         <div class="input-container" id="chat-input">
             <form class="input-form" id="chat-form">
-                <textarea name="user_input" 
-                          placeholder="Задай вопрос, если осмелишься" 
-                          rows="1" 
-                          autofocus></textarea>
+                <textarea name="user_input" placeholder="Введите сообщение" rows="1" autofocus></textarea>
                 <button type="submit"><i class="fas fa-arrow-right"></i></button>
-            </form>          
+            </form>
         </div>
     </div>
 
-    <!-- Модальное окно настроек -->
     <div class="modal" id="settings-modal">
         <div class="modal-content">
             <h2>Настройки</h2>
             <button class="close-btn" id="close-modal"><i class="fas fa-times"></i></button>
-
             <div class="settings-section">
                 <h3>Прочее</h3>
                 <div class="settings-item">
@@ -846,7 +639,6 @@
                     <span>Архивация все</span>
                 </div>
             </div>
-
             <div class="settings-section">
                 <h3>Безопасность</h3>
                 <div class="settings-item">
@@ -854,24 +646,20 @@
                     <span>Удаление</span>
                 </div>
             </div>
-
             <div class="modal-footer">
                 <button class="delete-all-btn">Удалить все</button>
-                <button class="close-modal-btn" id="close-modal-footer">Выйти</button>
+                <button class="close-modal-btn" id="close-modal-footer">Закрыть</button>
             </div>
         </div>
     </div>
 
-    <!-- Модальное окно выбора стиля -->
     <div class="style-modal" id="style-modal">
         <div class="style-modal-content">
             <h2>Стиль общения</h2>
             <button class="close-btn" id="close-style-modal"><i class="fas fa-times"></i></button>
-
             <div class="current-style">
                 <p>Текущий стиль: <span>{{ current_style|capitalize }}</span></p>
             </div>
-
             <div class="style-options">
                 {% for style in styles %}
                     <div class="style-option {% if style == current_style %}selected{% endif %}">
@@ -882,11 +670,11 @@
                                 <h4>{{ style|capitalize }}</h4>
                                 <p>
                                     {% if style == 'formal' %}
-                                        Общаюсь строго, профессионально и по делу. Идеально для деловых вопросов, официальных запросов или когда нужен серьезный тон.
+                                        Строго и профессионально.
                                     {% elif style == 'friendly' %}
-                                        Говорю легко, дружелюбно и на одной волне с тобой. Подходит для непринужденных бесед, шуток и повседневных вопросов.
+                                        Дружелюбно и легко.
                                     {% elif style == 'sassy' %}
-                                        Отвечаю с сарказмом, остроумием и легкой насмешкой. Выбирай, если любишь черный юмор и не боишься подколов.
+                                        Саркастично и остроумно.
                                     {% else %}
                                         Описание стиля {{ style|capitalize }}.
                                     {% endif %}
@@ -896,13 +684,14 @@
                     </div>
                 {% endfor %}
             </div>
-
-            <div class="style-modal-footer">
+            <div class="modal-footer">
                 <button class="close-style-modal-btn" id="close-style-modal-footer">Закрыть</button>
             </div>
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     <script>
         marked.setOptions({
             highlight: function(code, lang) {
@@ -912,7 +701,7 @@
             breaks: true,
             gfm: true
         });
-    
+
         function renderMarkdown(element, text) {
             const content = element.querySelector('.message-content');
             content.innerHTML = marked.parse(text);
@@ -924,8 +713,7 @@
                 copyButton.className = 'copy-btn';
                 copyButton.textContent = 'Копировать';
                 copyButton.addEventListener('click', () => {
-                    const codeText = codeElement.textContent;
-                    navigator.clipboard.writeText(codeText).then(() => {
+                    navigator.clipboard.writeText(codeElement.textContent).then(() => {
                         copyButton.textContent = 'Скопировано';
                         setTimeout(() => copyButton.textContent = 'Копировать', 2000);
                     });
@@ -933,7 +721,7 @@
                 wrapper.appendChild(copyButton);
             }
         }
-    
+
         function scrollToBottom() {
             const chatContainer = document.getElementById('conversation');
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -966,24 +754,16 @@
             aiMessage.setAttribute('data-markdown', content);
             messageWrapper.appendChild(aiMessage);
             chatContainer.insertBefore(messageWrapper, loading);
-            aiMessage.classList.add('typing');
             renderMarkdown(aiMessage, content);
-            aiMessage.addEventListener('animationend', () => {
-                aiMessage.classList.remove('typing');
-                scrollToBottom();
-            });
             scrollToBottom();
         }
 
         function showChat() {
-            const welcomeScreen = document.getElementById('welcome-screen');
-            const chatContainer = document.getElementById('conversation');
-            const chatInput = document.getElementById('chat-input');
-            welcomeScreen.style.display = 'none';
-            chatContainer.style.display = 'flex';
-            chatInput.style.display = 'block';
+            document.getElementById('welcome-screen').style.display = 'none';
+            document.getElementById('conversation').style.display = 'flex';
+            document.getElementById('chat-input').style.display = 'block';
         }
-    
+
         document.addEventListener('DOMContentLoaded', () => {
             const welcomeScreen = document.getElementById('welcome-screen');
             const chatContainer = document.getElementById('conversation');
@@ -991,26 +771,21 @@
             const welcomeForm = document.getElementById('welcome-form');
             const chatForm = document.getElementById('chat-form');
             const loading = document.getElementById('loading');
-
-            // Проверяем, есть ли история сообщений
             const hasHistory = {% if history %}true{% else %}false{% endif %};
 
-            // Если есть история, скрываем начальную страницу и показываем чат
             if (hasHistory) {
                 welcomeScreen.style.display = 'none';
                 chatContainer.style.display = 'flex';
                 chatInput.style.display = 'block';
             }
 
-            // Отрисовка сообщений из истории
             document.querySelectorAll('.ai-message').forEach(element => {
                 const markdownText = element.getAttribute('data-markdown');
                 renderMarkdown(element, markdownText);
             });
             loading.style.display = 'none';
             scrollToBottom();
-    
-            // Настройка авторесайза для обоих текстовых полей
+
             const textareas = document.querySelectorAll('textarea');
             textareas.forEach(textarea => {
                 textarea.addEventListener('input', function() {
@@ -1019,234 +794,118 @@
                 });
             });
 
-            // Функция для отправки сообщения на сервер
             async function sendMessage(input) {
                 const formData = new FormData();
                 formData.append('user_input', input);
-
+                loading.style.display = 'flex';
                 try {
                     const response = await fetch('/', {
                         method: 'POST',
                         body: formData
                     });
-
-                    if (!response.ok) {
-                        throw new Error('Ошибка сервера');
-                    }
-
+                    if (!response.ok) throw new Error('Ошибка сервера');
                     const data = await response.json();
                     loading.style.display = 'none';
                     addAiMessage(data.ai_response);
                 } catch (error) {
                     console.error('Ошибка:', error);
                     loading.style.display = 'none';
-                    addAiMessage('Произошла ошибка при получении ответа. Попробуй снова.');
+                    addAiMessage('Ошибка при обработке запроса.');
                 }
             }
 
-            // Обработка отправки формы на начальной странице
             welcomeForm.addEventListener('submit', function(e) {
                 e.preventDefault();
-                const input = welcomeForm.querySelector('textarea[name="user_input"]').value.trim();
-                if (!input) {
-                    alert("Пусто? Серьёзно?");
-                    return;
-                }
-
-                // Показываем чат сразу
+                const input = this.querySelector('textarea[name="user_input"]').value.trim();
+                if (!input) return;
                 showChat();
                 addUserMessage(input);
-                loading.style.display = 'flex';
-
-                // Очищаем текстовое поле
-                welcomeForm.querySelector('textarea[name="user_input"]').value = '';
-                welcomeForm.querySelector('textarea[name="user_input"]').style.height = 'auto';
-
-                // Отправляем запрос на сервер
+                this.querySelector('textarea[name="user_input"]').value = '';
+                this.querySelector('textarea[name="user_input"]').style.height = 'auto';
                 sendMessage(input);
             });
 
-            // Обработка отправки формы в чате
             chatForm.addEventListener('submit', function(e) {
                 e.preventDefault();
-                const input = chatForm.querySelector('textarea[name="user_input"]').value.trim();
-                if (!input) {
-                    alert("Пусто? Серьёзно?");
-                    return;
-                }
-
+                const input = this.querySelector('textarea[name="user_input"]').value.trim();
+                if (!input) return;
                 addUserMessage(input);
-                loading.style.display = 'flex';
-
-                // Очищаем текстовое поле
-                chatForm.querySelector('textarea[name="user_input"]').value = '';
-                chatForm.querySelector('textarea[name="user_input"]').style.height = 'auto';
-
-                // Отправляем запрос на сервер
+                this.querySelector('textarea[name="user_input"]').value = '';
+                this.querySelector('textarea[name="user_input"]').style.height = 'auto';
                 sendMessage(input);
             });
 
-            // Обработка нажатия Enter для обоих форм
             textareas.forEach(textarea => {
                 textarea.addEventListener('keydown', function(e) {
-                    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault();
-                        const form = this.closest('form');
-                        if (form) {
-                            form.dispatchEvent(new Event('submit'));
-                        }
+                        this.closest('form').dispatchEvent(new Event('submit'));
                     }
                 });
             });
 
-            // Управление модальным окном настроек
             const settingsBtn = document.getElementById('settings-btn');
             const settingsModal = document.getElementById('settings-modal');
             const closeModal = document.getElementById('close-modal');
             const closeModalFooter = document.getElementById('close-modal-footer');
-
-            // Управление модальным окном выбора стиля
             const styleBtn = document.getElementById('style-btn');
             const styleModal = document.getElementById('style-modal');
             const closeStyleModal = document.getElementById('close-style-modal');
             const closeStyleModalFooter = document.getElementById('close-style-modal-footer');
 
-            // Проверка, что элементы настроек найдены
-            if (!settingsBtn) {
-                console.error("Кнопка настроек (settings-btn) не найдена!");
-                return;
-            }
-            if (!settingsModal) {
-                console.error("Модальное окно настроек (settings-modal) не найдено!");
-                return;
-            }
-            if (!closeModal) {
-                console.error("Кнопка закрытия настроек (close-modal) не найдена!");
-                return;
-            }
-            if (!closeModalFooter) {
-                console.error("Кнопка закрытия в футере настроек (close-modal-footer) не найдена!");
-                return;
-            }
-
-            // Проверка, что элементы выбора стиля найдены
-            if (!styleBtn) {
-                console.error("Кнопка выбора стиля (style-btn) не найдена!");
-                return;
-            }
-            if (!styleModal) {
-                console.error("Модальное окно выбора стиля (style-modal) не найдено!");
-                return;
-            }
-            if (!closeStyleModal) {
-                console.error("Кнопка закрытия выбора стиля (close-style-modal) не найдена!");
-                return;
-            }
-            if (!closeStyleModalFooter) {
-                console.error("Кнопка закрытия в футере выбора стиля (close-style-modal-footer) не найдена!");
-                return;
-            }
-
-            // Открытие модального окна настроек
             settingsBtn.addEventListener('click', () => {
                 settingsModal.style.display = 'flex';
-                setTimeout(() => {
-                    settingsModal.classList.add('show');
-                }, 10);
+                setTimeout(() => settingsModal.classList.add('show'), 10);
             });
 
-            // Закрытие модального окна настроек через крестик
             closeModal.addEventListener('click', () => {
                 settingsModal.classList.remove('show');
-                setTimeout(() => {
-                    settingsModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => settingsModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна настроек через кнопку "Выйти"
             closeModalFooter.addEventListener('click', () => {
                 settingsModal.classList.remove('show');
-                setTimeout(() => {
-                    settingsModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => settingsModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна настроек при клике вне его
             settingsModal.addEventListener('click', (e) => {
                 if (e.target === settingsModal) {
                     settingsModal.classList.remove('show');
-                    setTimeout(() => {
-                        settingsModal.style.display = 'none';
-                    }, 300);
+                    setTimeout(() => settingsModal.style.display = 'none', 300);
                 }
             });
 
-            // Открытие модального окна выбора стиля
             styleBtn.addEventListener('click', () => {
                 styleModal.style.display = 'flex';
-                setTimeout(() => {
-                    styleModal.classList.add('show');
-                }, 10);
+                setTimeout(() => styleModal.classList.add('show'), 10);
             });
 
-            // Закрытие модального окна выбора стиля через крестик
             closeStyleModal.addEventListener('click', () => {
                 styleModal.classList.remove('show');
-                setTimeout(() => {
-                    styleModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => styleModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна выбора стиля через кнопку "Закрыть"
             closeStyleModalFooter.addEventListener('click', () => {
                 styleModal.classList.remove('show');
-                setTimeout(() => {
-                    styleModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => styleModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна выбора стиля при клике вне его
             styleModal.addEventListener('click', (e) => {
                 if (e.target === styleModal) {
                     styleModal.classList.remove('show');
-                    setTimeout(() => {
-                        styleModal.style.display = 'none';
-                    }, 300);
+                    setTimeout(() => styleModal.style.display = 'none', 300);
                 }
             });
 
-            // Отправка формы при клике на стиль
             document.querySelectorAll('.style-option').forEach(option => {
-                option.addEventListener('click', (e) => {
-                    e.preventDefault();
+                option.addEventListener('click', () => {
                     const form = option.querySelector('form');
-                    if (form) {
-                        console.log("Клик по стилю:", form.querySelector('input[name="style"]').value);
-                        form.submit();
-                        styleModal.classList.remove('show');
-                        setTimeout(() => {
-                            styleModal.style.display = 'none';
-                        }, 300);
-                    } else {
-                        console.error("Форма не найдена внутри .style-option!");
-                    }
+                    if (form) form.submit();
                 });
             });
         });
-    
-        window.addEventListener('load', () => {
-            const lastAiMessage = document.querySelector('.ai-message:last-child');
-            if (lastAiMessage) {
-                const markdownText = lastAiMessage.getAttribute('data-markdown');
-                lastAiMessage.classList.add('typing');
-                renderMarkdown(lastAiMessage, markdownText);
-                lastAiMessage.addEventListener('animationend', () => {
-                    lastAiMessage.classList.remove('typing');
-                    scrollToBottom();
-                });
-            }
-            scrollToBottom();
-        });
+
+        window.addEventListener('load', scrollToBottom);
     </script>
 </body>
 </html>
