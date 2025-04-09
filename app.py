@@ -265,23 +265,18 @@ def change_style():
 @app.route("/", methods=["GET", "POST"])
 async def index():
     user_id = session['user_id']
-    chat_id = session.get('active_chat')
-
-    if not chat_id:
+    if 'active_chat' not in session:
         chat_id = str(uuid.uuid4())
         add_chat(chat_id, user_id)
         session['active_chat'] = chat_id
-
-    all_chats = get_all_chats(user_id)
-    chats = {}
-    for cid, cdata in all_chats.items():
-        history = get_chat_history(cid)
-        if history or cid == chat_id:
-            chats[cid] = cdata
-
-    history = get_chat_history(chat_id) if chat_id in all_chats else []
+    
+    chat_id = session.get('active_chat')
+    chats = get_all_chats(user_id)
+    if chat_id not in chats:
+        return redirect(url_for("new_chat"))
+    
+    history = get_chat_history(chat_id)
     current_style = get_user_style(user_id)
-    print(f"Rendering chat: {chat_id}, History: {history}")  # Отладка
 
     if request.method == "POST":
         user_input = request.form.get("user_input", "").strip()
@@ -318,12 +313,6 @@ async def index():
                     del active_requests[request_id]
         return jsonify({"ai_response": "Пустой запрос."}), 400
 
-    chats = {}
-    for cid, cdata in all_chats.items():
-        history = get_chat_history(cid)
-        if history or cid == chat_id:
-            chats[cid] = cdata
-
     return render_template("index.html", history=history, chats=chats, active_chat=chat_id, current_style=current_style, styles=STYLES.keys())
 
 @app.route("/new_chat")
@@ -332,7 +321,6 @@ def new_chat():
     chat_id = str(uuid.uuid4())
     add_chat(chat_id, user_id)
     session["active_chat"] = chat_id
-    print(f"New chat created: {chat_id}")  # Отладка
     return redirect(url_for("index"))
 
 @app.route("/switch_chat/<chat_id>")
