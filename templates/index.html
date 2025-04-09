@@ -1021,28 +1021,43 @@
 
             // Функция для отправки сообщения на сервер
             async function sendMessage(input) {
-                const formData = new FormData();
-                formData.append('user_input', input);
+    const formData = new FormData();
+    formData.append('user_input', input);
 
-                try {
-                    const response = await fetch('/', {
-                        method: 'POST',
-                        body: formData
-                    });
+    try {
+        const response = await fetch('/', {
+            method: 'POST',
+            body: formData
+        });
 
-                    if (!response.ok) {
-                        throw new Error('Ошибка сервера');
-                    }
+        if (!response.ok) {
+            throw new Error('Ошибка сервера');
+        }
 
-                    const data = await response.json();
-                    loading.style.display = 'none';
-                    addAiMessage(data.ai_response);
-                } catch (error) {
-                    console.error('Ошибка:', error);
-                    loading.style.display = 'none';
-                    addAiMessage('Произошла ошибка при получении ответа. Попробуй снова.');
+        const data = await response.json();
+        loading.style.display = 'none';
+        addAiMessage(data.ai_response);
+
+        // Обновляем список чатов, если он пришёл в ответе
+        if (data.chats) {
+            const chatList = document.getElementById('chat-list'); // Предполагаю, что у тебя есть такой элемент
+            if (chatList) {
+                chatList.innerHTML = ''; // Очищаем старый список
+                for (let chatId in data.chats) {
+                    const chat = data.chats[chatId];
+                    const isActive = chatId === "{{ active_chat }}"; // Сравниваем с текущим чатом
+                    const li = document.createElement('li');
+                    li.innerHTML = `<a href="/switch_chat/${chatId}" class="${isActive ? 'active' : ''}">${chat.title}</a>`;
+                    chatList.appendChild(li);
                 }
             }
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        loading.style.display = 'none';
+        addAiMessage('Произошла ошибка при получении ответа. Попробуй снова.');
+    }
+}
 
             // Обработка отправки формы на начальной странице
             welcomeForm.addEventListener('submit', function(e) {
