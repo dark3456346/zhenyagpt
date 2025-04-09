@@ -10,7 +10,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
-        /* Оставляем стили без изменений */
         * {
             margin: 0;
             padding: 0;
@@ -90,7 +89,6 @@
             transform: scale(1.2);
         }
 
-        /* Оставляем остальные стили без изменений */
         .main {
             flex: 1;
             display: flex;
@@ -750,12 +748,10 @@
     <div class="sidebar">
         <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Выйти</a>
         <a href="{{ url_for('new_chat') }}"><i class="fas fa-plus"></i> Новый чат</a>
-        <!-- Список чатов -->
         {% for chat_id, chat_data in chats.items() %}
             <a href="{{ url_for('switch_chat', chat_id=chat_id) }}" 
                class="{% if chat_id == active_chat %}active{% endif %}" 
-               data-chat-id="{{ chat_id }}" 
-               {% if chat_id != active_chat and not history %}style="display: none;"{% endif %}>
+               data-chat-id="{{ chat_id }}">
                 <i class="fas fa-comment"></i> 
                 <span class="chat-title">{{ chat_data.title }}</span>
                 <form method="POST" action="{{ url_for('delete_chat_route', chat_id=chat_id) }}" style="display: inline;">
@@ -779,7 +775,6 @@
             </div>
         </div>
 
-        <!-- Начальная страница -->
         <div class="welcome-screen" id="welcome-screen">
             <h2>Добро пожаловать в ZhenyaGPT.</h2>
             <p>Чем я могу помочь сегодня?</p>
@@ -792,7 +787,6 @@
             </form>
         </div>
 
-        <!-- Контейнер чата -->
         <div class="chat-container" id="conversation">
             {% for message in history %}
                 {% if message.role == 'user' %}
@@ -815,7 +809,6 @@
             </div>
         </div>
 
-        <!-- Поле ввода для чата -->
         <div class="input-container" id="chat-input">
             <form class="input-form" id="chat-form">
                 <textarea name="user_input" 
@@ -827,12 +820,10 @@
         </div>
     </div>
 
-    <!-- Модальное окно настроек -->
     <div class="modal" id="settings-modal">
         <div class="modal-content">
             <h2>Настройки</h2>
             <button class="close-btn" id="close-modal"><i class="fas fa-times"></i></button>
-
             <div class="settings-section">
                 <h3>Прочее</h3>
                 <div class="settings-item">
@@ -844,7 +835,6 @@
                     <span>Архивация все</span>
                 </div>
             </div>
-
             <div class="settings-section">
                 <h3>Безопасность</h3>
                 <div class="settings-item">
@@ -852,7 +842,6 @@
                     <span>Удаление</span>
                 </div>
             </div>
-
             <div class="modal-footer">
                 <button class="delete-all-btn">Удалить все</button>
                 <button class="close-modal-btn" id="close-modal-footer">Выйти</button>
@@ -860,16 +849,13 @@
         </div>
     </div>
 
-    <!-- Модальное окно выбора стиля -->
     <div class="style-modal" id="style-modal">
         <div class="style-modal-content">
             <h2>Стиль общения</h2>
             <button class="close-btn" id="close-style-modal"><i class="fas fa-times"></i></button>
-
             <div class="current-style">
                 <p>Текущий стиль: <span>{{ current_style|capitalize }}</span></p>
             </div>
-
             <div class="style-options">
                 {% for style in styles %}
                     <div class="style-option {% if style == current_style %}selected{% endif %}">
@@ -894,7 +880,6 @@
                     </div>
                 {% endfor %}
             </div>
-
             <div class="style-modal-footer">
                 <button class="close-style-modal-btn" id="close-style-modal-footer">Закрыть</button>
             </div>
@@ -973,19 +958,10 @@
             scrollToBottom();
         }
 
-        function showChat() {
-            const welcomeScreen = document.getElementById('welcome-screen');
-            const chatContainer = document.getElementById('conversation');
-            const chatInput = document.getElementById('chat-input');
-            welcomeScreen.style.display = 'none';
-            chatContainer.style.display = 'flex';
-            chatInput.style.display = 'block';
-        }
-
         function updateChatTitle(chatId, newTitle) {
             const chatLink = document.querySelector(`a[data-chat-id="${chatId}"]`);
             if (chatLink) {
-                chatLink.style.display = 'flex'; // Показываем чат в списке
+                chatLink.style.display = 'flex';
                 const titleSpan = chatLink.querySelector('.chat-title');
                 if (titleSpan) {
                     titleSpan.textContent = newTitle;
@@ -1006,6 +982,16 @@
                 welcomeScreen.style.display = 'none';
                 chatContainer.style.display = 'flex';
                 chatInput.style.display = 'block';
+            } else {
+                chatContainer.innerHTML = `
+                    <div class="loading" id="loading">
+                        <span>Пишу тебе ответ...</span>
+                        <div class="spinner"></div>
+                    </div>
+                `;
+                chatContainer.style.display = 'none';
+                chatInput.style.display = 'none';
+                welcomeScreen.style.display = 'flex';
             }
 
             document.querySelectorAll('.ai-message').forEach(element => {
@@ -1041,11 +1027,13 @@
                     loading.style.display = 'none';
                     addAiMessage(data.ai_response);
 
-                    // Обновляем заголовок активного чата после первого сообщения
                     const activeChatId = "{{ active_chat }}";
                     if (!hasHistory) {
                         const newTitle = input.length > 30 ? input.substring(0, 30) + '...' : input;
                         updateChatTitle(activeChatId, newTitle);
+                        chatContainer.style.display = 'flex';
+                        chatInput.style.display = 'block';
+                        welcomeScreen.style.display = 'none';
                     }
                 } catch (error) {
                     console.error('Ошибка:', error);
@@ -1062,7 +1050,6 @@
                     return;
                 }
 
-                showChat();
                 addUserMessage(input);
                 loading.style.display = 'flex';
                 welcomeForm.querySelector('textarea[name="user_input"]').value = '';
