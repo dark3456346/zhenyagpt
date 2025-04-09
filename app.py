@@ -276,20 +276,20 @@ async def index():
     # Получаем все чаты из базы
     all_chats = get_all_chats(user_id)
     
-    # Фильтруем чаты: показываем только те, у которых есть история или это активный чат
+    # Фильтруем чаты: показываем те, у которых есть история или это активный чат
     chats = {}
     for cid, cdata in all_chats.items():
         history = get_chat_history(cid)
-        if history or cid == chat_id:  # Показываем чат, если есть сообщения или он активный
+        if history or cid == chat_id:  # Условие: история есть или чат активный
             chats[cid] = cdata
 
+    # История текущего активного чата
     history = get_chat_history(chat_id) if chat_id in all_chats else []
     current_style = get_user_style(user_id)
 
     if request.method == "POST":
         user_input = request.form.get("user_input", "").strip()
         if user_input:
-            # Обновляем заголовок только при первом сообщении
             if not history:
                 conn = get_db_connection()
                 c = conn.cursor()
@@ -321,6 +321,13 @@ async def index():
                 if request_id in active_requests:
                     del active_requests[request_id]
         return jsonify({"ai_response": "Пустой запрос."}), 400
+
+    # Повторно обновляем chats перед рендерингом, чтобы учесть изменения после POST
+    chats = {}
+    for cid, cdata in all_chats.items():
+        history = get_chat_history(cid)
+        if history or cid == chat_id:
+            chats[cid] = cdata
 
     return render_template("index.html", history=history, chats=chats, active_chat=chat_id, current_style=current_style, styles=STYLES.keys())
 
