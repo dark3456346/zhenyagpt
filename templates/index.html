@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
+        /* Оставляем стили без изменений */
         * {
             margin: 0;
             padding: 0;
@@ -26,7 +27,6 @@
             line-height: 1.7;
         }
 
-        /* Сайдбар */
         .sidebar {
             width: 280px;
             background: linear-gradient(180deg, #121212 0%, #1a1a1a 100%);
@@ -90,7 +90,7 @@
             transform: scale(1.2);
         }
 
-        /* Основной контейнер */
+        /* Оставляем остальные стили без изменений */
         .main {
             flex: 1;
             display: flex;
@@ -99,7 +99,6 @@
             position: relative;
         }
 
-        /* Хедер */
         .header {
             padding: 20px;
             text-align: center;
@@ -159,7 +158,6 @@
             transform: scale(1.1);
         }
 
-        /* Модальные окна */
         .modal, .style-modal {
             display: none;
             position: fixed;
@@ -336,7 +334,6 @@
             box-shadow: 0 0 15px rgba(30, 144, 255, 0.7);
         }
 
-        /* Стили для модального окна выбора стиля */
         .current-style {
             background: rgba(255, 255, 255, 0.03);
             padding: 15px;
@@ -416,7 +413,6 @@
             color: #1e90ff;
         }
 
-        /* Начальная страница */
         .welcome-screen {
             display: flex;
             flex-direction: column;
@@ -489,7 +485,6 @@
             box-shadow: 0 0 15px rgba(30, 144, 255, 0.7);
         }
 
-        /* Чат */
         .chat-container {
             flex: 1;
             padding: 30px;
@@ -645,7 +640,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* Поле ввода */
         .input-container {
             padding: 20px;
             border-top: 1px solid #2a2a2a;
@@ -756,10 +750,14 @@
     <div class="sidebar">
         <a href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Выйти</a>
         <a href="{{ url_for('new_chat') }}"><i class="fas fa-plus"></i> Новый чат</a>
+        <!-- Список чатов -->
         {% for chat_id, chat_data in chats.items() %}
             <a href="{{ url_for('switch_chat', chat_id=chat_id) }}" 
-               class="{% if chat_id == active_chat %}active{% endif %}">
-                <i class="fas fa-comment"></i> {{ chat_data.title }}
+               class="{% if chat_id == active_chat %}active{% endif %}" 
+               data-chat-id="{{ chat_id }}" 
+               {% if chat_id != active_chat and not history %}style="display: none;"{% endif %}>
+                <i class="fas fa-comment"></i> 
+                <span class="chat-title">{{ chat_data.title }}</span>
                 <form method="POST" action="{{ url_for('delete_chat_route', chat_id=chat_id) }}" style="display: inline;">
                     <button type="submit" class="delete-chat-btn" onclick="return confirm('Удалить этот чат?');">
                         <i class="fas fa-trash"></i>
@@ -912,7 +910,7 @@
             breaks: true,
             gfm: true
         });
-    
+
         function renderMarkdown(element, text) {
             const content = element.querySelector('.message-content');
             content.innerHTML = marked.parse(text);
@@ -933,7 +931,7 @@
                 wrapper.appendChild(copyButton);
             }
         }
-    
+
         function scrollToBottom() {
             const chatContainer = document.getElementById('conversation');
             chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -983,7 +981,18 @@
             chatContainer.style.display = 'flex';
             chatInput.style.display = 'block';
         }
-    
+
+        function updateChatTitle(chatId, newTitle) {
+            const chatLink = document.querySelector(`a[data-chat-id="${chatId}"]`);
+            if (chatLink) {
+                chatLink.style.display = 'flex'; // Показываем чат в списке
+                const titleSpan = chatLink.querySelector('.chat-title');
+                if (titleSpan) {
+                    titleSpan.textContent = newTitle;
+                }
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const welcomeScreen = document.getElementById('welcome-screen');
             const chatContainer = document.getElementById('conversation');
@@ -992,25 +1001,20 @@
             const chatForm = document.getElementById('chat-form');
             const loading = document.getElementById('loading');
 
-            // Проверяем, есть ли история сообщений
             const hasHistory = {% if history %}true{% else %}false{% endif %};
-
-            // Если есть история, скрываем начальную страницу и показываем чат
             if (hasHistory) {
                 welcomeScreen.style.display = 'none';
                 chatContainer.style.display = 'flex';
                 chatInput.style.display = 'block';
             }
 
-            // Отрисовка сообщений из истории
             document.querySelectorAll('.ai-message').forEach(element => {
                 const markdownText = element.getAttribute('data-markdown');
                 renderMarkdown(element, markdownText);
             });
             loading.style.display = 'none';
             scrollToBottom();
-    
-            // Настройка авторесайза для обоих текстовых полей
+
             const textareas = document.querySelectorAll('textarea');
             textareas.forEach(textarea => {
                 textarea.addEventListener('input', function() {
@@ -1019,7 +1023,6 @@
                 });
             });
 
-            // Функция для отправки сообщения на сервер
             async function sendMessage(input) {
                 const formData = new FormData();
                 formData.append('user_input', input);
@@ -1037,6 +1040,13 @@
                     const data = await response.json();
                     loading.style.display = 'none';
                     addAiMessage(data.ai_response);
+
+                    // Обновляем заголовок активного чата после первого сообщения
+                    const activeChatId = "{{ active_chat }}";
+                    if (!hasHistory) {
+                        const newTitle = input.length > 30 ? input.substring(0, 30) + '...' : input;
+                        updateChatTitle(activeChatId, newTitle);
+                    }
                 } catch (error) {
                     console.error('Ошибка:', error);
                     loading.style.display = 'none';
@@ -1044,7 +1054,6 @@
                 }
             }
 
-            // Обработка отправки формы на начальной странице
             welcomeForm.addEventListener('submit', function(e) {
                 e.preventDefault();
                 const input = welcomeForm.querySelector('textarea[name="user_input"]').value.trim();
@@ -1053,20 +1062,14 @@
                     return;
                 }
 
-                // Показываем чат сразу
                 showChat();
                 addUserMessage(input);
                 loading.style.display = 'flex';
-
-                // Очищаем текстовое поле
                 welcomeForm.querySelector('textarea[name="user_input"]').value = '';
                 welcomeForm.querySelector('textarea[name="user_input"]').style.height = 'auto';
-
-                // Отправляем запрос на сервер
                 sendMessage(input);
             });
 
-            // Обработка отправки формы в чате
             chatForm.addEventListener('submit', function(e) {
                 e.preventDefault();
                 const input = chatForm.querySelector('textarea[name="user_input"]').value.trim();
@@ -1077,16 +1080,11 @@
 
                 addUserMessage(input);
                 loading.style.display = 'flex';
-
-                // Очищаем текстовое поле
                 chatForm.querySelector('textarea[name="user_input"]').value = '';
                 chatForm.querySelector('textarea[name="user_input"]').style.height = 'auto';
-
-                // Отправляем запрос на сервер
                 sendMessage(input);
             });
 
-            // Обработка нажатия Enter для обоих форм
             textareas.forEach(textarea => {
                 textarea.addEventListener('keydown', function(e) {
                     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
@@ -1099,123 +1097,70 @@
                 });
             });
 
-            // Управление модальным окном настроек
             const settingsBtn = document.getElementById('settings-btn');
             const settingsModal = document.getElementById('settings-modal');
             const closeModal = document.getElementById('close-modal');
             const closeModalFooter = document.getElementById('close-modal-footer');
 
-            // Управление модальным окном выбора стиля
             const styleBtn = document.getElementById('style-btn');
             const styleModal = document.getElementById('style-modal');
             const closeStyleModal = document.getElementById('close-style-modal');
             const closeStyleModalFooter = document.getElementById('close-style-modal-footer');
 
-            // Проверка, что элементы настроек найдены
-            if (!settingsBtn) {
-                console.error("Кнопка настроек (settings-btn) не найдена!");
-                return;
-            }
-            if (!settingsModal) {
-                console.error("Модальное окно настроек (settings-modal) не найдено!");
-                return;
-            }
-            if (!closeModal) {
-                console.error("Кнопка закрытия настроек (close-modal) не найдена!");
-                return;
-            }
-            if (!closeModalFooter) {
-                console.error("Кнопка закрытия в футере настроек (close-modal-footer) не найдена!");
-                return;
-            }
+            if (!settingsBtn) console.error("Кнопка настроек (settings-btn) не найдена!");
+            if (!settingsModal) console.error("Модальное окно настроек (settings-modal) не найдено!");
+            if (!closeModal) console.error("Кнопка закрытия настроек (close-modal) не найдена!");
+            if (!closeModalFooter) console.error("Кнопка закрытия в футере настроек (close-modal-footer) не найдена!");
 
-            // Проверка, что элементы выбора стиля найдены
-            if (!styleBtn) {
-                console.error("Кнопка выбора стиля (style-btn) не найдена!");
-                return;
-            }
-            if (!styleModal) {
-                console.error("Модальное окно выбора стиля (style-modal) не найдено!");
-                return;
-            }
-            if (!closeStyleModal) {
-                console.error("Кнопка закрытия выбора стиля (close-style-modal) не найдена!");
-                return;
-            }
-            if (!closeStyleModalFooter) {
-                console.error("Кнопка закрытия в футере выбора стиля (close-style-modal-footer) не найдена!");
-                return;
-            }
+            if (!styleBtn) console.error("Кнопка выбора стиля (style-btn) не найдена!");
+            if (!styleModal) console.error("Модальное окно выбора стиля (style-modal) не найдено!");
+            if (!closeStyleModal) console.error("Кнопка закрытия выбора стиля (close-style-modal) не найдена!");
+            if (!closeStyleModalFooter) console.error("Кнопка закрытия в футере выбора стиля (close-style-modal-footer) не найдена!");
 
-            // Открытие модального окна настроек
             settingsBtn.addEventListener('click', () => {
                 settingsModal.style.display = 'flex';
-                setTimeout(() => {
-                    settingsModal.classList.add('show');
-                }, 10);
+                setTimeout(() => settingsModal.classList.add('show'), 10);
             });
 
-            // Закрытие модального окна настроек через крестик
             closeModal.addEventListener('click', () => {
                 settingsModal.classList.remove('show');
-                setTimeout(() => {
-                    settingsModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => settingsModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна настроек через кнопку "Выйти"
             closeModalFooter.addEventListener('click', () => {
                 settingsModal.classList.remove('show');
-                setTimeout(() => {
-                    settingsModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => settingsModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна настроек при клике вне его
             settingsModal.addEventListener('click', (e) => {
                 if (e.target === settingsModal) {
                     settingsModal.classList.remove('show');
-                    setTimeout(() => {
-                        settingsModal.style.display = 'none';
-                    }, 300);
+                    setTimeout(() => settingsModal.style.display = 'none', 300);
                 }
             });
 
-            // Открытие модального окна выбора стиля
             styleBtn.addEventListener('click', () => {
                 styleModal.style.display = 'flex';
-                setTimeout(() => {
-                    styleModal.classList.add('show');
-                }, 10);
+                setTimeout(() => styleModal.classList.add('show'), 10);
             });
 
-            // Закрытие модального окна выбора стиля через крестик
             closeStyleModal.addEventListener('click', () => {
                 styleModal.classList.remove('show');
-                setTimeout(() => {
-                    styleModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => styleModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна выбора стиля через кнопку "Закрыть"
             closeStyleModalFooter.addEventListener('click', () => {
                 styleModal.classList.remove('show');
-                setTimeout(() => {
-                    styleModal.style.display = 'none';
-                }, 300);
+                setTimeout(() => styleModal.style.display = 'none', 300);
             });
 
-            // Закрытие модального окна выбора стиля при клике вне его
             styleModal.addEventListener('click', (e) => {
                 if (e.target === styleModal) {
                     styleModal.classList.remove('show');
-                    setTimeout(() => {
-                        styleModal.style.display = 'none';
-                    }, 300);
+                    setTimeout(() => styleModal.style.display = 'none', 300);
                 }
             });
 
-            // Отправка формы при клике на стиль
             document.querySelectorAll('.style-option').forEach(option => {
                 option.addEventListener('click', (e) => {
                     e.preventDefault();
@@ -1224,16 +1169,14 @@
                         console.log("Клик по стилю:", form.querySelector('input[name="style"]').value);
                         form.submit();
                         styleModal.classList.remove('show');
-                        setTimeout(() => {
-                            styleModal.style.display = 'none';
-                        }, 300);
+                        setTimeout(() => styleModal.style.display = 'none', 300);
                     } else {
                         console.error("Форма не найдена внутри .style-option!");
                     }
                 });
             });
         });
-    
+
         window.addEventListener('load', () => {
             const lastAiMessage = document.querySelector('.ai-message:last-child');
             if (lastAiMessage) {
