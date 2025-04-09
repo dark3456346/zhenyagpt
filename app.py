@@ -267,25 +267,21 @@ async def index():
     user_id = session['user_id']
     chat_id = session.get('active_chat')
 
-    # Если активного чата нет, создаём новый
     if not chat_id:
         chat_id = str(uuid.uuid4())
         add_chat(chat_id, user_id)
         session['active_chat'] = chat_id
 
-    # Получаем все чаты из базы
     all_chats = get_all_chats(user_id)
-    
-    # Фильтруем чаты: показываем те, у которых есть история или это активный чат
     chats = {}
     for cid, cdata in all_chats.items():
         history = get_chat_history(cid)
-        if history or cid == chat_id:  # Условие: история есть или чат активный
+        if history or cid == chat_id:
             chats[cid] = cdata
 
-    # История текущего активного чата
     history = get_chat_history(chat_id) if chat_id in all_chats else []
     current_style = get_user_style(user_id)
+    print(f"Rendering chat: {chat_id}, History: {history}")  # Отладка
 
     if request.method == "POST":
         user_input = request.form.get("user_input", "").strip()
@@ -322,7 +318,6 @@ async def index():
                     del active_requests[request_id]
         return jsonify({"ai_response": "Пустой запрос."}), 400
 
-    # Повторно обновляем chats перед рендерингом, чтобы учесть изменения после POST
     chats = {}
     for cid, cdata in all_chats.items():
         history = get_chat_history(cid)
@@ -335,8 +330,9 @@ async def index():
 def new_chat():
     user_id = session['user_id']
     chat_id = str(uuid.uuid4())
-    add_chat(chat_id, user_id)  # Создаём чат сразу с заголовком "Без названия"
+    add_chat(chat_id, user_id)
     session["active_chat"] = chat_id
+    print(f"New chat created: {chat_id}")  # Отладка
     return redirect(url_for("index"))
 
 @app.route("/switch_chat/<chat_id>")
