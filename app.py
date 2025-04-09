@@ -281,11 +281,12 @@ async def index():
     if request.method == "POST":
         user_input = request.form.get("user_input", "").strip()
         if user_input:
+            # Обновляем название чата на первое сообщение, если история пуста
             if not history:
+                new_title = user_input[:30] + "..." if len(user_input) > 30 else user_input
                 conn = get_db_connection()
                 c = conn.cursor()
-                c.execute("UPDATE chats SET title = %s WHERE id = %s",
-                          (user_input[:30] + "..." if len(user_input) > 30 else user_input, chat_id))
+                c.execute("UPDATE chats SET title = %s WHERE id = %s", (new_title, chat_id))
                 conn.commit()
                 conn.close()
             add_message(chat_id, "user", user_input)
@@ -301,7 +302,9 @@ async def index():
                 ai_reply = await task
                 if ai_reply and request_id in active_requests:
                     add_message(chat_id, "assistant", ai_reply)
-                    return jsonify({"ai_response": ai_reply})
+                    # Возвращаем ответ и обновлённый список чатов
+                    updated_chats = get_all_chats(user_id)
+                    return jsonify({"ai_response": ai_reply, "chats": updated_chats})
                 else:
                     return jsonify({"ai_response": "Ответ был отменен."}), 400
             except asyncio.CancelledError:
