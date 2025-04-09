@@ -437,9 +437,10 @@ async def index():
 def new_chat():
     user_id = session['user_id']
     chat_id = str(uuid.uuid4())
-    add_chat(chat_id, user_id)
+    add_chat(chat_id, user_id)  # Создаём чат с текущим last_active
     session["active_chat"] = chat_id
-    session['chats'][chat_id] = {"title": "Без названия", "history": []}
+    # Обновляем весь список чатов, чтобы порядок был правильным
+    session['chats'] = get_all_chats(user_id)
     logger.info(f"Создан новый чат {chat_id} для пользователя {user_id}")
     return redirect(url_for("index"))
 
