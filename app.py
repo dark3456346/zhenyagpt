@@ -205,7 +205,8 @@ async def get_io_response(messages, request_id):
                     logger.error(f"Ошибка OpenRouter API: {response.status} - {error_text}")
                     return f"Ошибка API: {error_text}"
                 result = await response.json()
-                clean_response = result["choices"][0]["message"]["content"].strip()
+                logger.debug(f"Сырой JSON от OpenRouter: {result}")
+                clean_response = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
                 logger.debug(f"OpenRouter API ответ за {time.time() - start_time:.2f} сек")
                 logger.debug(f"Получен ответ от OpenRouter: {clean_response}")
                 cache.set(cache_key, clean_response, timeout=60)
@@ -336,18 +337,21 @@ async def index():
                 await update_chat_title(chat_id, title)
                 session['chats'][chat_id]['title'] = title
 
-            if ai_reply and request_id in active_requests:
-                if "Ошибка" in ai_reply:
-                    logger.error(f"Ответ содержит ошибку: {ai_reply}")
-                    return jsonify({"ai_response": ai_reply}), 500
-                await add_message(chat_id, "assistant", ai_reply)
-                session['chats'][chat_id]['history'].append({"role": "assistant", "content": ai_reply})
-                session['chats'] = await get_all_chats(user_id)
-                logger.debug(f"Ответ за {time.time() - start_time:.2f} сек")
-                return jsonify({"ai_response": ai_reply, "chats": session['chats']})
-            else:
-                logger.error(f"Ошибка: ai_reply={ai_reply}, request_id={request_id} не в active_requests")
-                return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
+            if request_id not in active_requests:
+                logger.error(f"Запрос {request_id} был отменён")
+                return jsonify({"ai_response": "Ответ был отменён."}), 400
+            if not ai_reply:
+                logger.error(f"Пустой ответ от OpenRouter для запроса {request_id}")
+                return jsonify({"ai_response": "Модель не дала ответа. Попробуй ещё раз!"}, 200)
+            if "Ошибка" in ai_reply:
+                logger.error(f"Ответ содержит ошибку: {ai_reply}")
+                return jsonify({"ai_response": ai_reply}), 500
+
+            await add_message(chat_id, "assistant", ai_reply)
+            session['chats'][chat_id]['history'].append({"role": "assistant", "content": ai_reply})
+            session['chats'] = await get_all_chats(user_id)
+            logger.debug(f"Ответ за {time.time() - start_time:.2f} сек")
+            return jsonify({"ai_response": ai_reply, "chats": session['chats']})
 
         return await render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id,
                                      current_style=current_style, styles=STYLES.keys())
