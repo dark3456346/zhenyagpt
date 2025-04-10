@@ -37,9 +37,10 @@ STYLES = {
 active_requests = {}
 db_pool = None
 
-async def init_db_pool():
+async def get_db_pool():
     global db_pool
     if db_pool is None:
+        loop = asyncio.get_running_loop()
         db_pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"), min_size=1, max_size=10)
         async with db_pool.acquire() as conn:
             await conn.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -68,34 +69,40 @@ async def init_db_pool():
                                     FOREIGN KEY (user_id) REFERENCES users (id)
                                 )''')
         logger.info("База данных инициализирована")
+    return db_pool
 
 @cache.cached(timeout=300, key_prefix="user_style_%s")
 async def get_user_style(user_id):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         result = await conn.fetchval("SELECT style FROM user_settings WHERE user_id = $1", user_id)
     return result or "sassy"
 
 async def set_user_style(user_id, style):
     if style not in STYLES:
         style = "sassy"
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO user_settings (user_id, style) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET style = $3",
             user_id, style, style
         )
 
 async def get_all_chats(user_id):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT id, title FROM chats WHERE user_id = $1 ORDER BY last_active DESC", user_id)
     return {row['id']: {"title": row['title'], "history": []} for row in rows}
 
 async def chat_exists(user_id, chat_id):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         result = await conn.fetchval("SELECT 1 FROM chats WHERE user_id = $1 AND id = $2", user_id, chat_id)
     return bool(result)
 
 async def add_chat(chat_id, user_id, title="Без названия"):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO chats (id, user_id, title, last_active) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING",
             chat_id, user_id, title
@@ -105,15 +112,17 @@ async def update_chat_title(chat_id, title):
     asyncio.create_task(_update_chat_title(chat_id, title))
 
 async def _update_chat_title(chat_id, title):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         await conn.execute("UPDATE chats SET title = $1 WHERE id = $2", title[:30], chat_id)
 
 async def add_message(chat_id, role, content):
     asyncio.create_task(_add_message(chat_id, role, content))
 
 async def _add_message(chat_id, role, content):
-    async with db_pool.acquire() as conn:
-        await conn.execute("INSERT INTO messages (chat_id, role, content) VALUES ($1, $2, $3)", chatを与_id, role, content)
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("INSERT INTO messages (chat_id, role, content) VALUES ($1, $2, $3)", chat_id, role, content)
         await conn.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
 @cache.cached(timeout=60, key_prefix="ai_response_%s")
@@ -158,7 +167,8 @@ async def register():
         username = request.form.get('username')
         password = request.form.get('password')
         if username and password:
-            async with db_pool.acquire() as conn:
+            pool = await get_db_pool()
+            async with pool.acquire() as conn:
                 try:
                     user_id = await conn.fetchval(
                         "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id",
@@ -175,7 +185,8 @@ async def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        async with db_pool.acquire() as conn:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
             user = await conn.fetchrow("SELECT id, password FROM users WHERE username = $1", username)
             if user and check_password_hash(user['password'], password):
                 session['user_id'] = user['id']
@@ -273,7 +284,8 @@ async def switch_chat(chat_id):
     return redirect(url_for("index"))
 
 async def _update_chat_last_active(chat_id):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         await conn.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
 @app.route("/reset_chat/<chat_id>", methods=["POST"])
@@ -287,9 +299,10 @@ async def reset_chat_route(chat_id):
     return redirect(url_for("index"))
 
 async def _reset_chat(chat_id):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         await conn.execute("DELETE FROM messages WHERE chat_id = $1", chat_id)
-        await conn.execute("UPDATE chats SET title = 'Без названий', last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
+        await conn.execute("UPDATE chats SET title = 'Без названия', last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
 @app.route("/delete_chat/<chat_id>", methods=["POST"])
 async def delete_chat_route(chat_id):
@@ -306,7 +319,8 @@ async def delete_chat_route(chat_id):
     return redirect(url_for("index"))
 
 async def _delete_chat(chat_id):
-    async with db_pool.acquire() as conn:
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
         await conn.execute("DELETE FROM messages WHERE chat_id = $1", chat_id)
         await conn.execute("DELETE FROM chats WHERE id = $1", chat_id)
 
@@ -316,12 +330,7 @@ def stop_response():
         active_requests[request_id] = False
     return jsonify({"status": "stopped"})
 
-# Инициализация пула базы при запуске
-loop = asyncio.get_event_loop()
-loop.run_until_complete(init_db_pool())
-
 if __name__ == "__main__":
-    # Для локального запуска используй uvicorn
     import uvicorn
     port = int(os.environ.get("PORT", 5000))
     uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="debug")
