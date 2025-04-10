@@ -20,13 +20,9 @@ logger = logging.getLogger(__name__)
 # Кэширование
 cache = Cache(app, config={'CACHE_TYPE': 'simple'})
 
-# API настройки
-IO_API_KEY = os.getenv("IO_API_KEY")
-IO_API_URL = "https://api.intelligence.io.solutions/api/v1/chat/completions"
-IO_MODEL = "deepseek-ai/DeepSeek-R1"
-
-if not IO_API_KEY:
-    raise ValueError("IO_API_KEY не задан в переменных окружения!")
+# Puter.js API настройки
+PUTER_API_URL = "https://api.puter.com/ai/chat"
+PUTER_MODEL = "deepseek-chat"  # Можно менять на другие модели, если Puter.js поддерживает
 
 # Стили
 STYLES = {
@@ -104,11 +100,16 @@ async def init_db_pool():
                             )''')
     logger.info("База данных успешно инициализирована")
 
-@cache.cached(timeout=300, key_prefix="user_style_%s")
 async def get_user_style(user_id):
+    cache_key = f"user_style_{user_id}"
+    cached_style = cache.get(cache_key)
+    if cached_style:
+        return cached_style
     async with db_pool.acquire() as conn:
         result = await conn.fetchval("SELECT style FROM user_settings WHERE user_id = $1", user_id)
-    return result or "sassy"
+    style = result or "sassy"
+    cache.set(cache_key, style, timeout=300)
+    return style
 
 async def set_user_style(user_id, style):
     if style not in STYLES:
@@ -118,6 +119,7 @@ async def set_user_style(user_id, style):
             "INSERT INTO user_settings (user_id, style) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET style = $3",
             user_id, style, style
         )
+    cache.delete(f"user_style_{user_id}")
 
 async def get_all_chats(user_id):
     async with db_pool.acquire() as conn:
@@ -170,39 +172,44 @@ async def delete_chat(chat_id):
         await conn.execute("DELETE FROM messages WHERE chat_id = $1", chat_id)
         await conn.execute("DELETE FROM chats WHERE id = $1", chat_id)
 
-@cache.cached(timeout=60, key_prefix="ai_response_%s")
 async def get_io_response(messages, request_id):
     start_time = time.time()
+    cache_key = f"ai_response_{hash(str(messages))}_{request_id}"
+    cached_response = cache.get(cache_key)
+    if cached_response:
+        logger.debug(f"Кэшированный ответ за {time.time() - start_time:.2f} сек")
+        return cached_response
+
     headers = {
-        "Authorization": f"Bearer {IO_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": IO_MODEL,
+        "model": PUTER_MODEL,
         "messages": messages,
         "max_tokens": 1500,
-        "temperature": 0.9,
-        "top_p": 0.95
+        "temperature": 0.9
     }
     async with aiohttp.ClientSession() as session:
+        logger.debug(f"Начало запроса к Puter.js API для {request_id}")
         try:
-            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+            async with session.post(PUTER_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if request_id not in active_requests:
                     logger.info(f"Запрос {request_id} был отменён")
                     return None
                 if response.status != 200:
                     error_text = await response.text()
-                    logger.error(f"Ошибка API: {response.status} - {error_text}")
+                    logger.error(f"Ошибка Puter.js API: {response.status} - {error_text}")
                     return f"Ошибка API: {error_text}"
-                raw_response = (await response.json())["choices"][0]["message"]["content"]
-                clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
-                logger.debug(f"API ответ за {time.time() - start_time:.2f} сек")
+                result = await response.json()
+                clean_response = result.get("message", {}).get("content", "").strip()
+                logger.debug(f"Puter.js API ответ за {time.time() - start_time:.2f} сек")
+                cache.set(cache_key, clean_response, timeout=60)
                 return clean_response
         except asyncio.TimeoutError:
-            logger.error("Превышено время ожидания ответа от API")
+            logger.error("Превышено время ожидания ответа от Puter.js API")
             return "Ошибка: Превышено время ожидания ответа от API."
         except Exception as e:
-            logger.error(f"Ошибка при запросе к API: {str(e)}")
+            logger.error(f"Ошибка при запросе к Puter.js API: {str(e)}")
             return f"Ошибка при запросе к API: {str(e)}"
 
 async def generate_chat_title(user_input, request_id):
@@ -274,7 +281,6 @@ async def change_style():
     style = (await request.form).get("style")
     if style in STYLES:
         await set_user_style(user_id, style)
-        cache.delete(f"user_style_{user_id}")
         logger.info(f"Стиль пользователя {user_id} изменён на {style}")
     return redirect(url_for("index"))
 
@@ -311,7 +317,6 @@ async def index():
             request_id = str(uuid.uuid4())
             active_requests[request_id] = True
 
-            # Отправляем только последнее сообщение для скорости
             messages = [STYLES[current_style], {"role": "user", "content": user_input}]
             tasks = [get_io_response(messages, request_id)]
             if not history:
