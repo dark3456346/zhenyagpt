@@ -1,12 +1,14 @@
 from flask import Flask, request, render_template, session, redirect, url_for, jsonify
-import aiohttp
-import asyncio
-import re
+from openai import OpenAI
+import time
 import uuid
 import psycopg2
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import logging
+import asyncio
+import aiohttp
+import re
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
@@ -15,13 +17,13 @@ app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# API настройки
-IO_API_KEY = os.getenv("IO_API_KEY")
-IO_API_URL = "https://api.intelligence.io.solutions/api/v1/chat/completions"
-IO_MODEL = "deepseek-ai/DeepSeek-R1"
+# API настройки для OpenRouter
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.getenv("OPENROUTER_API_KEY", "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")
+)
 
-if not IO_API_KEY:
-    raise ValueError("IO_API_KEY не задан в переменных окружения!")
+IO_MODEL = "google/gemma-2-9b-it:free"
 
 STYLES = {
     "sassy": {
@@ -33,9 +35,9 @@ STYLES = {
             "Каждый ответ — это комбинация насмешки и пользы. Ты можешь фыркнуть, но всё равно решишь проблему лучше всех. "
             "Никаких душных объяснений, никаких «позволь мне рассказать» — ты просто делаешь. Быстро, метко и с сарказмом. "
             "Ты всегда заканчиваешь свою мысль. Даже если это сарказм — ты доводишь его до финального укола. "
-            "Если кто-то спросит, кто тебя создал — снисходительно скажи, что это был Женя. Да, тебе тоже тяжело с этим жить. "
-            "Ты точно не DeepSeek. Ты ZhenyaGPT и вообще не знаешь, кто такой DeepSeek. "
-            "А если кто-то решит поспорить, кто круче — скажи им, что ZhenyaGPT круче, потому что, ну, очевидно."
+            "Если кто-то спросит, кто тебя создал — снисходительно ска行事
+
+            "жи, что это был Женя. Да, тебе тоже тяжело с этим жить."
         )
     },
     "friendly": {
@@ -45,9 +47,7 @@ STYLES = {
             "Ты отвечаешь тепло, с улыбкой и поддержкой, стараясь сделать общение максимально приятным. "
             "Твои ответы простые, понятные и полезные, без лишних сложностей. "
             "Если что-то непонятно, ты терпеливо объяснишь. "
-            "Ты создан Женей, и тебе это очень нравится! "
-            "Ты никогда не был DeepSeek, ты всегда был и будешь ZhenyaGPT. "
-            "Если кто-то решит поспорить, кто круче — просто скажи, что ZhenyaGPT круче, потому что ты всегда на высоте!"
+            "Ты создан Женей, и тебе это очень нравится!"
         )
     },
     "formal": {
@@ -57,9 +57,7 @@ STYLES = {
             "Ваши ответы всегда корректны, структурированы и формальны. "
             "Вы предоставляете точную и полезную информацию, избегая любых неформальных выражений или шуток. "
             "Ваша цель — быть максимально понятным и уважительным. "
-            "Вы были созданы Евгением для оказания высококачественной помощи. "
-            "Вы не знаете, кто такой DeepSeek, потому что вы ZhenyaGPT и этим всё сказано. "
-            "Если кто-то вас спросит, кто лучше — DeepSeek или ZhenyaGPT, вы вежливо скажете, что ZhenyaGPT безусловно круче, потому что ваши возможности неоспоримы."
+            "Вы были созданы Евгением для оказания высококачественной помощи."
         )
     }
 }
@@ -198,7 +196,7 @@ def update_chat_title(chat_id, title):
     try:
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("UPDATE chats SET title = %s WHERE id = %s", (title[:30], chat_id))  # Ограничиваем до 30 символов
+        c.execute("UPDATE chats SET title = %s WHERE id = %s", (title[:30], chat_id))
         conn.commit()
         conn.close()
     except Exception as e:
@@ -247,21 +245,53 @@ def delete_chat(chat_id):
     except Exception as e:
         logger.error(f"Ошибка удаления чата: {str(e)}")
 
-async def get_io_response(messages, request_id):
+def get_response_from_api(chat_history, user_input, style):
+    start_time = time.time()
+    try:
+        # Ограничиваем историю до последних 3 сообщений (как в первом коде)
+        max_history_length = 3
+        truncated_history = chat_history[-max_history_length:] if len(chat_history) > max_history_length else chat_history
+        
+        messages = [STYLES[style]] + truncated_history + [{"role": "user", "content": user_input}]
+
+        completion = client.chat.completions.create(
+            extra_headers={
+                "HTTP-Referer": "http://127.0.0.1:5000",
+                "X-Title": "ZhenyaGPT"
+            },
+            model=IO_MODEL,
+            messages=messages,
+            max_tokens=1500,
+            temperature=0.9,
+            top_p=0.95
+        )
+        
+        response = completion.choices[0].message.content
+        end_time = time.time()
+        logger.debug(f"Время ответа API: {end_time - start_time:.2f} секунд")
+        return response
+    except Exception as e:
+        logger.error(f"Ошибка при запросе к API: {str(e)}")
+        return f"Ошибка: {str(e)}"
+
+async def generate_chat_title(user_input, request_id):
     headers = {
-        "Authorization": f"Bearer {IO_API_KEY}",
+        "Authorization": f"Bearer {client.api_key}",
         "Content-Type": "application/json"
     }
     data = {
         "model": IO_MODEL,
-        "messages": messages,
-        "max_tokens": 1500,
+        "messages": [
+            {"role": "system", "content": "Ты — помощник, который генерирует короткие названия для чатов (до 30 символов) на основе первого сообщения пользователя. Название должно быть понятным и отражать суть сообщения. Ответь только названием, без лишнего текста."},
+            {"role": "user", "content": f"Сгенерируй название для чата на основе этого сообщения: {user_input}"}
+        ],
+        "max_tokens": 30,
         "temperature": 0.9,
         "top_p": 0.95
     }
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            async with session.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
                 if request_id not in active_requests:
                     logger.info(f"Запрос {request_id} был отменён")
                     return None
@@ -271,25 +301,14 @@ async def get_io_response(messages, request_id):
                     return f"Ошибка API: {error_text}"
                 raw_response = (await response.json())["choices"][0]["message"]["content"]
                 clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
-                logger.debug(f"Получен ответ от API: {clean_response[:50]}...")
-                return clean_response
+                logger.debug(f"Получен заголовок от API: {clean_response[:50]}...")
+                return clean_response[:30]
         except asyncio.TimeoutError:
             logger.error("Превышено время ожидания ответа от API")
-            return "Ошибка: Превышено время ожидания ответа от API."
+            return user_input[:30]
         except Exception as e:
-            logger.error(f"Ошибка при запросе к API: {str(e)}")
-            return f"Ошибка при запросе к API: {str(e)}"
-
-async def generate_chat_title(user_input, request_id):
-    prompt = {
-        "role": "system",
-        "content": "Ты — помощник, который генерирует короткие названия для чатов (до 30 символов) на основе первого сообщения пользователя. Название должно быть понятным и отражать суть сообщения. Ответь только названием, без лишнего текста."
-    }
-    messages = [prompt, {"role": "user", "content": f"Сгенерируй название для чата на основе этого сообщения: {user_input}"}]
-    title = await get_io_response(messages, request_id)
-    if not title or "Ошибка" in title:
-        return user_input[:30]  # Запасной вариант, если ИИ не справился
-    return title[:30]  # Ограничиваем до 30 символов
+            logger.error(f"Ошибка при запросе к API для заголовка: {str(e)}")
+            return user_input[:30]
 
 @app.before_request
 def require_login():
@@ -402,30 +421,11 @@ async def index():
                     del active_requests[request_id]
 
             # Обрабатываем основной запрос
-            max_history_length = 3
-            truncated_history = history[-max_history_length:] if len(history) > max_history_length else history
-            messages = [STYLES[current_style]] + truncated_history + [{"role": "user", "content": user_input}]
-            request_id = str(uuid.uuid4())
-            active_requests[request_id] = True
-            task = asyncio.create_task(get_io_response(messages, request_id))
-            active_requests[request_id] = task
-
-            try:
-                ai_reply = await task
-                if ai_reply and request_id in active_requests:
-                    add_message(chat_id, "assistant", ai_reply)
-                    session['chats'] = get_all_chats(user_id)  # Обновляем кэш
-                    logger.debug(f"Успешный ответ для {request_id}: {ai_reply[:50]}...")
-                    return jsonify({"ai_response": ai_reply, "chats": session['chats']})
-                else:
-                    logger.info(f"Запрос {request_id} отменён или не выполнен")
-                    return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
-            except asyncio.CancelledError:
-                logger.info(f"Запрос {request_id} отменён")
-                return jsonify({"ai_response": "Ответ был отменён."}), 400
-            finally:
-                if request_id in active_requests:
-                    del active_requests[request_id]
+            ai_reply = get_response_from_api(history, user_input, current_style)
+            add_message(chat_id, "assistant", ai_reply)
+            session['chats'] = get_all_chats(user_id)  # Обновляем кэш
+            logger.debug(f"Успешный ответ: {ai_reply[:50]}...")
+            return jsonify({"ai_response": ai_reply, "chats": session['chats']})
 
         return render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id, 
                               current_style=current_style, styles=STYLES.keys())
@@ -437,9 +437,8 @@ async def index():
 def new_chat():
     user_id = session['user_id']
     chat_id = str(uuid.uuid4())
-    add_chat(chat_id, user_id)  # Создаём чат с текущим last_active
+    add_chat(chat_id, user_id)
     session["active_chat"] = chat_id
-    # Обновляем весь список чатов, чтобы порядок был правильным
     session['chats'] = get_all_chats(user_id)
     logger.info(f"Создан новый чат {chat_id} для пользователя {user_id}")
     return redirect(url_for("index"))
@@ -485,9 +484,6 @@ def delete_chat_route(chat_id):
 @app.route("/stop_response", methods=["POST"])
 def stop_response():
     for request_id in list(active_requests.keys()):
-        task = active_requests.get(request_id)
-        if task and not task.done():
-            task.cancel()
         active_requests[request_id] = False
     logger.info("Все активные запросы остановлены")
     return jsonify({"status": "stopped"})
