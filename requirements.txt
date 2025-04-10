@@ -1,12 +1,5 @@
-Flask
-aiohttp
-asyncio
-psycopg2-binary
-Werkzeug
-Flask-Caching
-asyncpg
 flask
-aiohttp
-uvicorn
+requests
 psycopg2-binary
 werkzeug
+gunicorn
