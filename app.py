@@ -16,17 +16,17 @@ app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# Считываем API-ключ и логируем его для отладки
+# Считываем API-ключ
 api_key = os.getenv("OPENROUTER_API_KEY")
 if not api_key:
-    logger.error("OPENROUTER_API_KEY не найден в переменных окружения!")
-else:
-    logger.info(f"OPENROUTER_API_KEY успешно считан: {api_key[:10]}... (первые 10 символов)")
+    logger.error("OPENROUTER_API_KEY не найден в переменных окружения! Приложение не может запуститься.")
+    raise ValueError("OPENROUTER_API_KEY не задан в переменных окружения")
+logger.info(f"OPENROUTER_API_KEY успешно считан: {api_key[:10]}... (первые 10 символов)")
 
 # API настройки для OpenRouter
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key=api_key if api_key else "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"  # Запасной ключ только если переменная не задана
+    api_key=api_key
 )
 
 IO_MODEL = "google/gemma-2-9b-it:free"
