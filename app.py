@@ -3,8 +3,9 @@ import aiohttp
 import asyncio
 import re
 import uuid
-import psycopg2
+import asyncpg
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_caching import Cache
 import os
 import logging
 
@@ -15,6 +16,9 @@ app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Кэширование
+cache = Cache(app, config={'CACHE_TYPE': 'simple'})
+
 # API настройки
 IO_API_KEY = os.getenv("IO_API_KEY")
 IO_API_URL = "https://api.intelligence.io.solutions/api/v1/chat/completions"
@@ -23,6 +27,7 @@ IO_MODEL = "deepseek-ai/DeepSeek-R1"
 if not IO_API_KEY:
     raise ValueError("IO_API_KEY не задан в переменных окружения!")
 
+# Стили
 STYLES = {
     "sassy": {
         "role": "system",
@@ -65,187 +70,98 @@ STYLES = {
 }
 
 active_requests = {}
+db_pool = None
 
-def get_db_connection():
-    try:
-        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
-        return conn
-    except psycopg2.Error as e:
-        logger.error(f"Ошибка подключения к БД: {str(e)}")
-        raise
+async def init_db_pool():
+    global db_pool
+    db_pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"))
+    async with db_pool.acquire() as conn:
+        await conn.execute('''CREATE TABLE IF NOT EXISTS users (
+                                id SERIAL PRIMARY KEY,
+                                username TEXT UNIQUE NOT NULL,
+                                password TEXT NOT NULL
+                            )''')
+        await conn.execute('''CREATE TABLE IF NOT EXISTS chats (
+                                id TEXT PRIMARY KEY,
+                                user_id INTEGER,
+                                title TEXT NOT NULL DEFAULT 'Без названия',
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            )''')
+        await conn.execute('''CREATE TABLE IF NOT EXISTS messages (
+                                id SERIAL PRIMARY KEY,
+                                chat_id TEXT,
+                                role TEXT NOT NULL,
+                                content TEXT NOT NULL,
+                                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                                FOREIGN KEY (chat_id) REFERENCES chats (id)
+                            )''')
+        await conn.execute('''CREATE TABLE IF NOT EXISTS user_settings (
+                                user_id INTEGER PRIMARY KEY,
+                                style TEXT NOT NULL DEFAULT 'sassy',
+                                FOREIGN KEY (user_id) REFERENCES users (id)
+                            )''')
+    logger.info("База данных успешно инициализирована")
 
-def init_db():
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
-                        id SERIAL PRIMARY KEY,
-                        username TEXT UNIQUE NOT NULL,
-                        password TEXT NOT NULL
-                     )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS chats (
-                        id TEXT PRIMARY KEY,
-                        user_id INTEGER,
-                        title TEXT NOT NULL DEFAULT 'Без названия',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                     )''')
-        
-        c.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'chats'")
-        columns = [row[0] for row in c.fetchall()]
-        if 'last_active' not in columns:
-            c.execute('ALTER TABLE chats ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS messages (
-                        id SERIAL PRIMARY KEY,
-                        chat_id TEXT,
-                        role TEXT NOT NULL,
-                        content TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (chat_id) REFERENCES chats (id)
-                     )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS user_settings (
-                        user_id INTEGER PRIMARY KEY,
-                        style TEXT NOT NULL DEFAULT 'sassy',
-                        FOREIGN KEY (user_id) REFERENCES users (id)
-                     )''')
-        
-        conn.commit()
-        conn.close()
-        logger.info("База данных успешно инициализирована")
-    except Exception as e:
-        logger.error(f"Ошибка при инициализации БД: {str(e)}")
-        raise
+@cache.cached(timeout=300, key_prefix="user_style_%s")
+async def get_user_style(user_id):
+    async with db_pool.acquire() as conn:
+        result = await conn.fetchval("SELECT style FROM user_settings WHERE user_id = $1", user_id)
+    return result or "sassy"
 
-init_db()
-
-def get_user_style(user_id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT style FROM user_settings WHERE user_id = %s", (user_id,))
-        result = c.fetchone()
-        conn.close()
-        return result[0] if result else "sassy"
-    except Exception as e:
-        logger.error(f"Ошибка получения стиля пользователя: {str(e)}")
-        return "sassy"
-
-def set_user_style(user_id, style):
+async def set_user_style(user_id, style):
     if style not in STYLES:
         style = "sassy"
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("INSERT INTO user_settings (user_id, style) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET style = %s", 
-                  (user_id, style, style))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Ошибка установки стиля пользователя: {str(e)}")
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO user_settings (user_id, style) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET style = $3",
+            user_id, style, style
+        )
 
-def get_all_chats(user_id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT id, title FROM chats WHERE user_id = %s ORDER BY last_active DESC", (user_id,))
-        chats = {row[0]: {"title": row[1], "history": []} for row in c.fetchall()}
-        conn.close()
-        return chats
-    except Exception as e:
-        logger.error(f"Ошибка получения списка чатов: {str(e)}")
-        return {}
+async def get_all_chats(user_id):
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("SELECT id, title FROM chats WHERE user_id = $1 ORDER BY last_active DESC", user_id)
+    return {row['id']: {"title": row['title'], "history": []} for row in rows}
 
-def chat_exists(user_id, chat_id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT 1 FROM chats WHERE user_id = %s AND id = %s", (user_id, chat_id))
-        exists = c.fetchone() is not None
-        conn.close()
-        return exists
-    except Exception as e:
-        logger.error(f"Ошибка проверки существования чата: {str(e)}")
-        return False
+async def chat_exists(user_id, chat_id):
+    async with db_pool.acquire() as conn:
+        result = await conn.fetchval("SELECT 1 FROM chats WHERE user_id = $1 AND id = $2", user_id, chat_id)
+    return bool(result)
 
-def get_chat_history(chat_id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("SELECT role, content FROM messages WHERE chat_id = %s ORDER BY created_at ASC", (chat_id,))
-        history = [{"role": row[0], "content": row[1]} for row in c.fetchall()]
-        conn.close()
-        return history
-    except Exception as e:
-        logger.error(f"Ошибка получения истории чата: {str(e)}")
-        return []
+async def get_chat_history(chat_id):
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("SELECT role, content FROM messages WHERE chat_id = $1 ORDER BY created_at ASC", chat_id)
+    return [{"role": row['role'], "content": row['content']} for row in rows]
 
-def add_chat(chat_id, user_id, title="Без названия"):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("INSERT INTO chats (id, user_id, title, last_active) VALUES (%s, %s, %s, CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING", 
-                  (chat_id, user_id, title))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Ошибка добавления чата: {str(e)}")
+async def add_chat(chat_id, user_id, title="Без названия"):
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO chats (id, user_id, title, last_active) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (id) DO NOTHING",
+            chat_id, user_id, title
+        )
 
-def update_chat_title(chat_id, title):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("UPDATE chats SET title = %s WHERE id = %s", (title[:30], chat_id))  # Ограничиваем до 30 символов
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Ошибка обновления названия чата: {str(e)}")
+async def update_chat_title(chat_id, title):
+    async with db_pool.acquire() as conn:
+        await conn.execute("UPDATE chats SET title = $1 WHERE id = $2", title[:30], chat_id)
 
-def update_chat_last_active(chat_id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = %s", (chat_id,))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Ошибка обновления last_active чата: {str(e)}")
+async def update_chat_last_active(chat_id):
+    async with db_pool.acquire() as conn:
+        await conn.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
-def add_message(chat_id, role, content):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("INSERT INTO messages (chat_id, role, content) VALUES (%s, %s, %s)", (chat_id, role, content))
-        conn.commit()
-        conn.close()
-        update_chat_last_active(chat_id)
-    except Exception as e:
-        logger.error(f"Ошибка добавления сообщения: {str(e)}")
+async def add_message(chat_id, role, content):
+    async with db_pool.acquire() as conn:
+        await conn.execute("INSERT INTO messages (chat_id, role, content) VALUES ($1, $2, $3)", chat_id, role, content)
+    await update_chat_last_active(chat_id)
 
-def reset_chat(chat_id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
-        c.execute("UPDATE chats SET title = 'Без названия', last_active = CURRENT_TIMESTAMP WHERE id = %s", (chat_id,))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Ошибка сброса чата: {str(e)}")
+async def reset_chat(chat_id):
+    async with db_pool.acquire() as conn:
+        await conn.execute("DELETE FROM messages WHERE chat_id = $1", chat_id)
+        await conn.execute("UPDATE chats SET title = 'Без названия', last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
-def delete_chat(chat_id):
-    try:
-        conn = get_db_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM messages WHERE chat_id = %s", (chat_id,))
-        c.execute("DELETE FROM chats WHERE id = %s", (chat_id,))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        logger.error(f"Ошибка удаления чата: {str(e)}")
+async def delete_chat(chat_id):
+    async with db_pool.acquire() as conn:
+        await conn.execute("DELETE FROM messages WHERE chat_id = $1", chat_id)
+        await conn.execute("DELETE FROM chats WHERE id = $1", chat_id)
 
 async def get_io_response(messages, request_id):
     headers = {
@@ -261,7 +177,7 @@ async def get_io_response(messages, request_id):
     }
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
                 if request_id not in active_requests:
                     logger.info(f"Запрос {request_id} был отменён")
                     return None
@@ -271,7 +187,6 @@ async def get_io_response(messages, request_id):
                     return f"Ошибка API: {error_text}"
                 raw_response = (await response.json())["choices"][0]["message"]["content"]
                 clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
-                logger.debug(f"Получен ответ от API: {clean_response[:50]}...")
                 return clean_response
         except asyncio.TimeoutError:
             logger.error("Превышено время ожидания ответа от API")
@@ -287,9 +202,11 @@ async def generate_chat_title(user_input, request_id):
     }
     messages = [prompt, {"role": "user", "content": f"Сгенерируй название для чата на основе этого сообщения: {user_input}"}]
     title = await get_io_response(messages, request_id)
-    if not title or "Ошибка" in title:
-        return user_input[:30]  # Запасной вариант, если ИИ не справился
-    return title[:30]  # Ограничиваем до 30 символов
+    return title[:30] if title and "Ошибка" not in title else user_input[:30]
+
+@app.before_first_request
+async def setup():
+    await init_db_pool()
 
 @app.before_request
 def require_login():
@@ -297,69 +214,57 @@ def require_login():
         return redirect(url_for('login'))
 
 @app.route('/register', methods=['GET', 'POST'])
-def register():
+async def register():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
         if username and password:
-            try:
-                conn = get_db_connection()
-                c = conn.cursor()
-                c.execute("INSERT INTO users (username, password) VALUES (%s, %s) RETURNING id",
-                         (username, generate_password_hash(password)))
-                user_id = c.fetchone()[0]
-                c.execute("INSERT INTO user_settings (user_id, style) VALUES (%s, %s)", (user_id, "sassy"))
-                conn.commit()
-                conn.close()
-                logger.info(f"Зарегистрирован новый пользователь: {username}")
-                return redirect(url_for('login'))
-            except psycopg2.IntegrityError:
-                logger.warning(f"Попытка зарегистрировать существующего пользователя: {username}")
-                return render_template('register.html', error="Пользователь с таким именем уже существует")
-            except Exception as e:
-                logger.error(f"Ошибка при регистрации: {str(e)}")
-                return render_template('register.html', error="Ошибка сервера")
+            async with db_pool.acquire() as conn:
+                try:
+                    user_id = await conn.fetchval(
+                        "INSERT INTO users (username, password) VALUES ($1, $2) RETURNING id",
+                        username, generate_password_hash(password)
+                    )
+                    await conn.execute(
+                        "INSERT INTO user_settings (user_id, style) VALUES ($1, $2)", user_id, "sassy"
+                    )
+                    logger.info(f"Зарегистрирован новый пользователь: {username}")
+                    return redirect(url_for('login'))
+                except asyncpg.UniqueViolationError:
+                    logger.warning(f"Попытка зарегистрировать существующего пользователя: {username}")
+                    return render_template('register.html', error="Пользователь с таким именем уже существует")
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
-def login():
+async def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
-        try:
-            conn = get_db_connection()
-            c = conn.cursor()
-            c.execute("SELECT id, password FROM users WHERE username = %s", (username,))
-            user = c.fetchone()
-            conn.close()
-            if user and check_password_hash(user[1], password):
-                session['user_id'] = user[0]
+        async with db_pool.acquire() as conn:
+            user = await conn.fetchrow("SELECT id, password FROM users WHERE username = $1", username)
+            if user and check_password_hash(user['password'], password):
+                session['user_id'] = user['id']
                 session['username'] = username
-                session['chats'] = get_all_chats(user[0])
+                session['chats'] = await get_all_chats(user['id'])
                 logger.info(f"Пользователь {username} вошёл в систему")
                 return redirect(url_for('index'))
             logger.warning(f"Неудачная попытка входа для {username}")
             return render_template('login.html', error="Неверное имя пользователя или пароль")
-        except Exception as e:
-            logger.error(f"Ошибка при входе: {str(e)}")
-            return render_template('login.html', error="Ошибка сервера")
     return render_template('login.html')
 
 @app.route('/logout')
 def logout():
-    session.pop('user_id', None)
-    session.pop('username', None)
-    session.pop('active_chat', None)
-    session.pop('chats', None)
+    session.clear()
     logger.info("Пользователь вышел из системы")
     return redirect(url_for('login'))
 
 @app.route("/change_style", methods=["POST"])
-def change_style():
+async def change_style():
     user_id = session['user_id']
     style = request.form.get("style")
     if style in STYLES:
-        set_user_style(user_id, style)
+        await set_user_style(user_id, style)
+        cache.delete(f"user_style_{user_id}")
         logger.info(f"Стиль пользователя {user_id} изменён на {style}")
     return redirect(url_for("index"))
 
@@ -368,18 +273,18 @@ async def index():
     try:
         user_id = session['user_id']
         if 'chats' not in session:
-            session['chats'] = get_all_chats(user_id)
+            session['chats'] = await get_all_chats(user_id)
 
-        if 'active_chat' not in session or not chat_exists(user_id, session['active_chat']):
+        if 'active_chat' not in session or not await chat_exists(user_id, session['active_chat']):
             chat_id = str(uuid.uuid4())
-            add_chat(chat_id, user_id)
+            await add_chat(chat_id, user_id)
             session['active_chat'] = chat_id
             session['chats'][chat_id] = {"title": "Без названия", "history": []}
             logger.info(f"Создан новый чат {chat_id} для пользователя {user_id}")
 
         chat_id = session['active_chat']
-        history = get_chat_history(chat_id)
-        current_style = get_user_style(user_id)
+        history = session['chats'][chat_id]['history'] if chat_id in session['chats'] else []
+        current_style = await get_user_style(user_id)
 
         if request.method == "POST":
             user_input = request.form.get("user_input", "").strip()
@@ -387,116 +292,95 @@ async def index():
                 return jsonify({"ai_response": "Пустой запрос."}), 400
 
             logger.debug(f"Получен запрос от пользователя {user_id}: {user_input}")
-            add_message(chat_id, "user", user_input)
+            await add_message(chat_id, "user", user_input)
+            session['chats'][chat_id]['history'].append({"role": "user", "content": user_input})
+            if len(session['chats'][chat_id]['history']) > 3:
+                session['chats'][chat_id]['history'] = session['chats'][chat_id]['history'][-3:]
 
-            # Генерируем название чата от ИИ, если это первое сообщение
-            if not history:
-                request_id = str(uuid.uuid4())
-                active_requests[request_id] = True
-                title_task = asyncio.create_task(generate_chat_title(user_input, request_id))
-                title = await title_task
-                if title and request_id in active_requests:
-                    update_chat_title(chat_id, title)
-                    session['chats'][chat_id]['title'] = title
-                if request_id in active_requests:
-                    del active_requests[request_id]
-
-            # Обрабатываем основной запрос
-            max_history_length = 3
-            truncated_history = history[-max_history_length:] if len(history) > max_history_length else history
-            messages = [STYLES[current_style]] + truncated_history + [{"role": "user", "content": user_input}]
             request_id = str(uuid.uuid4())
             active_requests[request_id] = True
-            task = asyncio.create_task(get_io_response(messages, request_id))
-            active_requests[request_id] = task
 
-            try:
-                ai_reply = await task
-                if ai_reply and request_id in active_requests:
-                    add_message(chat_id, "assistant", ai_reply)
-                    session['chats'] = get_all_chats(user_id)  # Обновляем кэш
-                    logger.debug(f"Успешный ответ для {request_id}: {ai_reply[:50]}...")
-                    return jsonify({"ai_response": ai_reply, "chats": session['chats']})
-                else:
-                    logger.info(f"Запрос {request_id} отменён или не выполнен")
-                    return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
-            except asyncio.CancelledError:
-                logger.info(f"Запрос {request_id} отменён")
-                return jsonify({"ai_response": "Ответ был отменён."}), 400
-            finally:
-                if request_id in active_requests:
-                    del active_requests[request_id]
+            messages = [STYLES[current_style]] + session['chats'][chat_id]['history']
+            tasks = [get_io_response(messages, request_id)]
+            if not history:
+                tasks.append(generate_chat_title(user_input, request_id))
 
-        return render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id, 
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            ai_reply = results[0]
+            title = results[1] if len(results) > 1 else None
+
+            if title and request_id in active_requests:
+                await update_chat_title(chat_id, title)
+                session['chats'][chat_id]['title'] = title
+
+            if ai_reply and request_id in active_requests:
+                await add_message(chat_id, "assistant", ai_reply)
+                session['chats'][chat_id]['history'].append({"role": "assistant", "content": ai_reply})
+                session['chats'] = await get_all_chats(user_id)
+                return jsonify({"ai_response": ai_reply, "chats": session['chats']})
+            else:
+                return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
+
+        return render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id,
                               current_style=current_style, styles=STYLES.keys())
     except Exception as e:
         logger.error(f"Ошибка в маршруте index: {str(e)}")
         return jsonify({"ai_response": f"Ошибка на сервере: {str(e)}"}), 500
 
 @app.route("/new_chat")
-def new_chat():
+async def new_chat():
     user_id = session['user_id']
     chat_id = str(uuid.uuid4())
-    add_chat(chat_id, user_id)  # Создаём чат с текущим last_active
+    await add_chat(chat_id, user_id)
     session["active_chat"] = chat_id
-    # Обновляем весь список чатов, чтобы порядок был правильным
-    session['chats'] = get_all_chats(user_id)
+    session['chats'] = await get_all_chats(user_id)
     logger.info(f"Создан новый чат {chat_id} для пользователя {user_id}")
     return redirect(url_for("index"))
 
 @app.route("/switch_chat/<chat_id>")
-def switch_chat(chat_id):
+async def switch_chat(chat_id):
     user_id = session['user_id']
-    if chat_exists(user_id, chat_id):
+    if await chat_exists(user_id, chat_id):
         session["active_chat"] = chat_id
-        update_chat_last_active(chat_id)
-        session['chats'] = get_all_chats(user_id)
+        await update_chat_last_active(chat_id)
+        session['chats'] = await get_all_chats(user_id)
         logger.info(f"Переключение на чат {chat_id} для пользователя {user_id}")
     else:
-        logger.warning(f"Чат {chat_id} не существует, создаём новый")
         return redirect(url_for("new_chat"))
     return redirect(url_for("index"))
 
 @app.route("/reset_chat/<chat_id>", methods=["POST"])
-def reset_chat_route(chat_id):
+async def reset_chat_route(chat_id):
     user_id = session['user_id']
-    if chat_exists(user_id, chat_id):
-        reset_chat(chat_id)
+    if await chat_exists(user_id, chat_id):
+        await reset_chat(chat_id)
         session['chats'][chat_id]['title'] = "Без названия"
-        session['chats'] = get_all_chats(user_id)
+        session['chats'][chat_id]['history'] = []
+        session['chats'] = await get_all_chats(user_id)
         logger.info(f"Чат {chat_id} сброшен для пользователя {user_id}")
     return redirect(url_for("index"))
 
 @app.route("/delete_chat/<chat_id>", methods=["POST"])
-def delete_chat_route(chat_id):
+async def delete_chat_route(chat_id):
     user_id = session['user_id']
-    if chat_exists(user_id, chat_id):
-        delete_chat(chat_id)
+    if await chat_exists(user_id, chat_id):
+        await delete_chat(chat_id)
         if session["active_chat"] == chat_id:
             new_chat_id = str(uuid.uuid4())
-            add_chat(new_chat_id, user_id)
+            await add_chat(new_chat_id, user_id)
             session["active_chat"] = new_chat_id
             session['chats'][new_chat_id] = {"title": "Без названия", "history": []}
         session['chats'].pop(chat_id, None)
-        session['chats'] = get_all_chats(user_id)
+        session['chats'] = await get_all_chats(user_id)
         logger.info(f"Чат {chat_id} удалён для пользователя {user_id}")
     return redirect(url_for("index"))
 
 @app.route("/stop_response", methods=["POST"])
 def stop_response():
     for request_id in list(active_requests.keys()):
-        task = active_requests.get(request_id)
-        if task and not task.done():
-            task.cancel()
         active_requests[request_id] = False
     logger.info("Все активные запросы остановлены")
     return jsonify({"status": "stopped"})
-
-@app.route("/clear_session")
-def clear_session():
-    session.clear()
-    logger.info("Сессия очищена")
-    return redirect(url_for("login"))
 
 if __name__ == "__main__":
     import uvicorn
