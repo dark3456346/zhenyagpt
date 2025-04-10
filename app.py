@@ -22,7 +22,7 @@ cache = Cache(app, config={'CACHE_TYPE': 'simple'})
 
 # OpenRouter API настройки
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY")  # Замени на свой ключ
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY")
 OPENROUTER_MODEL = "deepseek/deepseek-v3-base:free"
 
 # Стили
@@ -206,6 +206,7 @@ async def get_io_response(messages, request_id):
                 result = await response.json()
                 clean_response = result["choices"][0]["message"]["content"].strip()
                 logger.debug(f"OpenRouter API ответ за {time.time() - start_time:.2f} сек")
+                logger.debug(f"Получен ответ от OpenRouter: {clean_response}")
                 cache.set(cache_key, clean_response, timeout=60)
                 return clean_response
         except asyncio.TimeoutError:
@@ -281,7 +282,7 @@ async def logout():
 @app.route("/change_style", methods=["POST"])
 async def change_style():
     user_id = session['user_id']
-    style = (await request.form).get("style")
+    style = (await request.form).get('style')
     if style in STYLES:
         await set_user_style(user_id, style)
         logger.info(f"Стиль пользователя {user_id} изменён на {style}")
@@ -329,6 +330,7 @@ async def index():
             ai_reply = results[0]
             title = results[1] if len(results) > 1 else None
 
+            logger.debug(f"ai_reply: {ai_reply}, request_id in active_requests: {request_id in active_requests}")
             if title and request_id in active_requests:
                 await update_chat_title(chat_id, title)
                 session['chats'][chat_id]['title'] = title
@@ -340,6 +342,7 @@ async def index():
                 logger.debug(f"Ответ за {time.time() - start_time:.2f} сек")
                 return jsonify({"ai_response": ai_reply, "chats": session['chats']})
             else:
+                logger.error(f"Ошибка: ai_reply={ai_reply}, request_id={request_id} не в active_requests")
                 return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
 
         return await render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id,
