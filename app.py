@@ -9,6 +9,7 @@ from flask_caching import Cache
 import os
 import logging
 import time
+from asgiref.sync import async_to_sync
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
@@ -40,7 +41,7 @@ db_pool = None
 async def get_db_pool():
     global db_pool
     if db_pool is None:
-        loop = asyncio.get_running_loop()
+        loop = asyncio.get_event_loop()  # Используем текущий цикл, а не get_running_loop для WSGI
         db_pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"), min_size=1, max_size=10)
         async with db_pool.acquire() as conn:
             await conn.execute('''CREATE TABLE IF NOT EXISTS users (
@@ -162,6 +163,7 @@ def require_login():
         return redirect(url_for('login'))
 
 @app.route('/register', methods=['GET', 'POST'])
+@async_to_sync
 async def register():
     if request.method == 'POST':
         username = request.form.get('username')
@@ -181,6 +183,7 @@ async def register():
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
+@async_to_sync
 async def login():
     if request.method == 'POST':
         username = request.form.get('username')
@@ -202,6 +205,7 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route("/change_style", methods=["POST"])
+@async_to_sync
 async def change_style():
     user_id = session['user_id']
     style = request.form.get("style")
@@ -211,6 +215,7 @@ async def change_style():
     return redirect(url_for("index"))
 
 @app.route("/", methods=["GET", "POST"])
+@async_to_sync
 async def index():
     start_time = time.time()
     user_id = session['user_id']
@@ -264,6 +269,7 @@ async def index():
                           current_style=current_style, styles=STYLES.keys())
 
 @app.route("/new_chat")
+@async_to_sync
 async def new_chat():
     user_id = session['user_id']
     chat_id = str(uuid.uuid4())
@@ -273,6 +279,7 @@ async def new_chat():
     return redirect(url_for("index"))
 
 @app.route("/switch_chat/<chat_id>")
+@async_to_sync
 async def switch_chat(chat_id):
     user_id = session['user_id']
     if await chat_exists(user_id, chat_id):
@@ -289,6 +296,7 @@ async def _update_chat_last_active(chat_id):
         await conn.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
 @app.route("/reset_chat/<chat_id>", methods=["POST"])
+@async_to_sync
 async def reset_chat_route(chat_id):
     user_id = session['user_id']
     if await chat_exists(user_id, chat_id):
@@ -305,6 +313,7 @@ async def _reset_chat(chat_id):
         await conn.execute("UPDATE chats SET title = 'Без названия', last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
 @app.route("/delete_chat/<chat_id>", methods=["POST"])
+@async_to_sync
 async def delete_chat_route(chat_id):
     user_id = session['user_id']
     if await chat_exists(user_id, chat_id):
@@ -331,6 +340,7 @@ def stop_response():
     return jsonify({"status": "stopped"})
 
 if __name__ == "__main__":
+    # Для локального запуска
     import uvicorn
     port = int(os.environ.get("PORT", 5000))
     uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="debug")
