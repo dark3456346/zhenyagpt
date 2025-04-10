@@ -1,6 +1,7 @@
-quart
-flask-caching
+Flask
 aiohttp
+asyncio
+psycopg2-binary
+Werkzeug
+Flask-Caching
 asyncpg
-werkzeug
-uvicorn
