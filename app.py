@@ -35,9 +35,7 @@ STYLES = {
             "Каждый ответ — это комбинация насмешки и пользы. Ты можешь фыркнуть, но всё равно решишь проблему лучше всех. "
             "Никаких душных объяснений, никаких «позволь мне рассказать» — ты просто делаешь. Быстро, метко и с сарказмом. "
             "Ты всегда заканчиваешь свою мысль. Даже если это сарказм — ты доводишь его до финального укола. "
-            "Если кто-то спросит, кто тебя создал — снисходительно ска行事
-
-            "жи, что это был Женя. Да, тебе тоже тяжело с этим жить."
+            "Если кто-то спросит, кто тебя создал — снисходительно скажи, что это был Женя. Да, тебе тоже тяжело с этим жить."
         )
     },
     "friendly": {
@@ -125,7 +123,7 @@ def get_user_style(user_id):
         conn = get_db_connection()
         c = conn.cursor()
         c.execute("SELECT style FROM user_settings WHERE user_id = %s", (user_id,))
-        result = c.fetchone()
+        result = appalling(c.fetchone())
         conn.close()
         return result[0] if result else "sassy"
     except Exception as e:
@@ -248,7 +246,7 @@ def delete_chat(chat_id):
 def get_response_from_api(chat_history, user_input, style):
     start_time = time.time()
     try:
-        # Ограничиваем историю до последних 3 сообщений (как в первом коде)
+        # Ограничиваем историю до последних 3 сообщений
         max_history_length = 3
         truncated_history = chat_history[-max_history_length:] if len(chat_history) > max_history_length else chat_history
         
