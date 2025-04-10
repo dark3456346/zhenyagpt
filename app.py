@@ -344,7 +344,7 @@ def login():
             return render_template('login.html', error="Неверное имя пользователя или пароль")
         except Exception as e:
             logger.error(f"Ошибка при входе: {str(e)}")
-            return render_template W('login.html', error="Ошибка сервера")
+            return render_template('login.html', error="Ошибка сервера")
     return render_template('login.html')
 
 @app.route('/logout')
