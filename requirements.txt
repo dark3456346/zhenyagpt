@@ -5,3 +5,8 @@ psycopg2-binary
 Werkzeug
 Flask-Caching
 asyncpg
+flask
+aiohttp
+uvicorn
+psycopg2-binary
+werkzeug
