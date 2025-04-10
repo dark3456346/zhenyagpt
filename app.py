@@ -20,9 +20,10 @@ logger = logging.getLogger(__name__)
 # Кэширование
 cache = Cache(app, config={'CACHE_TYPE': 'simple'})
 
-# Puter.js API настройки
-PUTER_API_URL = "https://api.puter.com/ai/chat"
-PUTER_MODEL = "deepseek-chat"  # Можно менять на другие модели, если Puter.js поддерживает
+# OpenRouter API настройки
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "YOUR_OPENROUTER_API_KEY")  # Замени на свой ключ
+OPENROUTER_MODEL = "deepseek/deepseek-v3-base:free"
 
 # Стили
 STYLES = {
@@ -181,35 +182,37 @@ async def get_io_response(messages, request_id):
         return cached_response
 
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}"
     }
     data = {
-        "model": PUTER_MODEL,
+        "model": OPENROUTER_MODEL,
         "messages": messages,
         "max_tokens": 1500,
-        "temperature": 0.9
+        "temperature": 0.9,
+        "top_p": 0.95
     }
     async with aiohttp.ClientSession() as session:
-        logger.debug(f"Начало запроса к Puter.js API для {request_id}")
+        logger.debug(f"Начало запроса к OpenRouter API для {request_id}")
         try:
-            async with session.post(PUTER_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+            async with session.post(OPENROUTER_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if request_id not in active_requests:
                     logger.info(f"Запрос {request_id} был отменён")
                     return None
                 if response.status != 200:
                     error_text = await response.text()
-                    logger.error(f"Ошибка Puter.js API: {response.status} - {error_text}")
+                    logger.error(f"Ошибка OpenRouter API: {response.status} - {error_text}")
                     return f"Ошибка API: {error_text}"
                 result = await response.json()
-                clean_response = result.get("message", {}).get("content", "").strip()
-                logger.debug(f"Puter.js API ответ за {time.time() - start_time:.2f} сек")
+                clean_response = result["choices"][0]["message"]["content"].strip()
+                logger.debug(f"OpenRouter API ответ за {time.time() - start_time:.2f} сек")
                 cache.set(cache_key, clean_response, timeout=60)
                 return clean_response
         except asyncio.TimeoutError:
-            logger.error("Превышено время ожидания ответа от Puter.js API")
+            logger.error("Превышено время ожидания ответа от OpenRouter API")
             return "Ошибка: Превышено время ожидания ответа от API."
         except Exception as e:
-            logger.error(f"Ошибка при запросе к Puter.js API: {str(e)}")
+            logger.error(f"Ошибка при запросе к OpenRouter API: {str(e)}")
             return f"Ошибка при запросе к API: {str(e)}"
 
 async def generate_chat_title(user_input, request_id):
