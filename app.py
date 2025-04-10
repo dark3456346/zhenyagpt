@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, session, redirect, url_for, jsonify
+from quart import Quart, request, render_template, session, redirect, url_for, jsonify
 import aiohttp
 import asyncio
 import re
@@ -8,8 +8,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_caching import Cache
 import os
 import logging
+import time
 
-app = Flask(__name__)
+app = Quart(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
 
 # Настройка логирования
@@ -74,7 +75,7 @@ db_pool = None
 
 async def init_db_pool():
     global db_pool
-    db_pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"))
+    db_pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"), min_size=1, max_size=10)
     async with db_pool.acquire() as conn:
         await conn.execute('''CREATE TABLE IF NOT EXISTS users (
                                 id SERIAL PRIMARY KEY,
@@ -141,6 +142,9 @@ async def add_chat(chat_id, user_id, title="Без названия"):
         )
 
 async def update_chat_title(chat_id, title):
+    asyncio.create_task(_update_chat_title(chat_id, title))
+
+async def _update_chat_title(chat_id, title):
     async with db_pool.acquire() as conn:
         await conn.execute("UPDATE chats SET title = $1 WHERE id = $2", title[:30], chat_id)
 
@@ -149,9 +153,12 @@ async def update_chat_last_active(chat_id):
         await conn.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
 async def add_message(chat_id, role, content):
+    asyncio.create_task(_add_message(chat_id, role, content))
+
+async def _add_message(chat_id, role, content):
     async with db_pool.acquire() as conn:
         await conn.execute("INSERT INTO messages (chat_id, role, content) VALUES ($1, $2, $3)", chat_id, role, content)
-    await update_chat_last_active(chat_id)
+        await conn.execute("UPDATE chats SET last_active = CURRENT_TIMESTAMP WHERE id = $1", chat_id)
 
 async def reset_chat(chat_id):
     async with db_pool.acquire() as conn:
@@ -163,7 +170,9 @@ async def delete_chat(chat_id):
         await conn.execute("DELETE FROM messages WHERE chat_id = $1", chat_id)
         await conn.execute("DELETE FROM chats WHERE id = $1", chat_id)
 
+@cache.cached(timeout=60, key_prefix="ai_response_%s")
 async def get_io_response(messages, request_id):
+    start_time = time.time()
     headers = {
         "Authorization": f"Bearer {IO_API_KEY}",
         "Content-Type": "application/json"
@@ -177,7 +186,7 @@ async def get_io_response(messages, request_id):
     }
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if request_id not in active_requests:
                     logger.info(f"Запрос {request_id} был отменён")
                     return None
@@ -187,6 +196,7 @@ async def get_io_response(messages, request_id):
                     return f"Ошибка API: {error_text}"
                 raw_response = (await response.json())["choices"][0]["message"]["content"]
                 clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
+                logger.debug(f"API ответ за {time.time() - start_time:.2f} сек")
                 return clean_response
         except asyncio.TimeoutError:
             logger.error("Превышено время ожидания ответа от API")
@@ -204,20 +214,20 @@ async def generate_chat_title(user_input, request_id):
     title = await get_io_response(messages, request_id)
     return title[:30] if title and "Ошибка" not in title else user_input[:30]
 
-@app.before_first_request
+@app.before_serving
 async def setup():
     await init_db_pool()
 
 @app.before_request
-def require_login():
+async def require_login():
     if request.endpoint not in ['login', 'register', 'static'] and 'user_id' not in session:
         return redirect(url_for('login'))
 
 @app.route('/register', methods=['GET', 'POST'])
 async def register():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = (await request.form).get('username')
+        password = (await request.form).get('password')
         if username and password:
             async with db_pool.acquire() as conn:
                 try:
@@ -232,14 +242,14 @@ async def register():
                     return redirect(url_for('login'))
                 except asyncpg.UniqueViolationError:
                     logger.warning(f"Попытка зарегистрировать существующего пользователя: {username}")
-                    return render_template('register.html', error="Пользователь с таким именем уже существует")
-    return render_template('register.html')
+                    return await render_template('register.html', error="Пользователь с таким именем уже существует")
+    return await render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 async def login():
     if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
+        username = (await request.form).get('username')
+        password = (await request.form).get('password')
         async with db_pool.acquire() as conn:
             user = await conn.fetchrow("SELECT id, password FROM users WHERE username = $1", username)
             if user and check_password_hash(user['password'], password):
@@ -249,11 +259,11 @@ async def login():
                 logger.info(f"Пользователь {username} вошёл в систему")
                 return redirect(url_for('index'))
             logger.warning(f"Неудачная попытка входа для {username}")
-            return render_template('login.html', error="Неверное имя пользователя или пароль")
-    return render_template('login.html')
+            return await render_template('login.html', error="Неверное имя пользователя или пароль")
+    return await render_template('login.html')
 
 @app.route('/logout')
-def logout():
+async def logout():
     session.clear()
     logger.info("Пользователь вышел из системы")
     return redirect(url_for('login'))
@@ -261,7 +271,7 @@ def logout():
 @app.route("/change_style", methods=["POST"])
 async def change_style():
     user_id = session['user_id']
-    style = request.form.get("style")
+    style = (await request.form).get("style")
     if style in STYLES:
         await set_user_style(user_id, style)
         cache.delete(f"user_style_{user_id}")
@@ -270,6 +280,7 @@ async def change_style():
 
 @app.route("/", methods=["GET", "POST"])
 async def index():
+    start_time = time.time()
     try:
         user_id = session['user_id']
         if 'chats' not in session:
@@ -287,7 +298,7 @@ async def index():
         current_style = await get_user_style(user_id)
 
         if request.method == "POST":
-            user_input = request.form.get("user_input", "").strip()
+            user_input = (await request.form).get("user_input", "").strip()
             if not user_input:
                 return jsonify({"ai_response": "Пустой запрос."}), 400
 
@@ -300,7 +311,8 @@ async def index():
             request_id = str(uuid.uuid4())
             active_requests[request_id] = True
 
-            messages = [STYLES[current_style]] + session['chats'][chat_id]['history']
+            # Отправляем только последнее сообщение для скорости
+            messages = [STYLES[current_style], {"role": "user", "content": user_input}]
             tasks = [get_io_response(messages, request_id)]
             if not history:
                 tasks.append(generate_chat_title(user_input, request_id))
@@ -317,12 +329,13 @@ async def index():
                 await add_message(chat_id, "assistant", ai_reply)
                 session['chats'][chat_id]['history'].append({"role": "assistant", "content": ai_reply})
                 session['chats'] = await get_all_chats(user_id)
+                logger.debug(f"Ответ за {time.time() - start_time:.2f} сек")
                 return jsonify({"ai_response": ai_reply, "chats": session['chats']})
             else:
                 return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
 
-        return render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id,
-                              current_style=current_style, styles=STYLES.keys())
+        return await render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id,
+                                     current_style=current_style, styles=STYLES.keys())
     except Exception as e:
         logger.error(f"Ошибка в маршруте index: {str(e)}")
         return jsonify({"ai_response": f"Ошибка на сервере: {str(e)}"}), 500
@@ -376,7 +389,7 @@ async def delete_chat_route(chat_id):
     return redirect(url_for("index"))
 
 @app.route("/stop_response", methods=["POST"])
-def stop_response():
+async def stop_response():
     for request_id in list(active_requests.keys()):
         active_requests[request_id] = False
     logger.info("Все активные запросы остановлены")
@@ -385,4 +398,4 @@ def stop_response():
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 5000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="debug")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="debug")
