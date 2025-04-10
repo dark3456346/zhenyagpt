@@ -195,7 +195,8 @@ async def get_io_response(messages, request_id):
     async with aiohttp.ClientSession() as session:
         logger.debug(f"Начало запроса к OpenRouter API для {request_id}")
         try:
-            async with session.post(OPENROUTER_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
+            async with session.post(OPENROUTER_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                logger.debug(f"Статус ответа от OpenRouter: {response.status}")
                 if request_id not in active_requests:
                     logger.info(f"Запрос {request_id} был отменён")
                     return None
@@ -210,7 +211,7 @@ async def get_io_response(messages, request_id):
                 cache.set(cache_key, clean_response, timeout=60)
                 return clean_response
         except asyncio.TimeoutError:
-            logger.error("Превышено время ожидания ответа от OpenRouter API")
+            logger.error("Превышено время ожидания ответа от OpenRouter API (10 сек)")
             return "Ошибка: Превышено время ожидания ответа от API."
         except Exception as e:
             logger.error(f"Ошибка при запросе к OpenRouter API: {str(e)}")
@@ -336,6 +337,9 @@ async def index():
                 session['chats'][chat_id]['title'] = title
 
             if ai_reply and request_id in active_requests:
+                if "Ошибка" in ai_reply:
+                    logger.error(f"Ответ содержит ошибку: {ai_reply}")
+                    return jsonify({"ai_response": ai_reply}), 500
                 await add_message(chat_id, "assistant", ai_reply)
                 session['chats'][chat_id]['history'].append({"role": "assistant", "content": ai_reply})
                 session['chats'] = await get_all_chats(user_id)
