@@ -1,5 +1,6 @@
 from flask import Flask, request, render_template, session, redirect, url_for, jsonify
 import aiohttp
+import asyncio
 import re
 import uuid
 import psycopg2
@@ -14,13 +15,13 @@ app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# API настройки для OpenRouter
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODEL = "deepseek/deepseek-v3-base:free"
+# API настройки
+IO_API_KEY = os.getenv("IO_API_KEY")
+IO_API_URL = "https://api.intelligence.io.solutions/api/v1/chat/completions"
+IO_MODEL = "deepseek-ai/DeepSeek-R1"
 
-if not OPENROUTER_API_KEY:
-    raise ValueError("OPENROUTER_API_KEY не задан в переменных окружения!")
+if not IO_API_KEY:
+    raise ValueError("IO_API_KEY не задан в переменных окружения!")
 
 STYLES = {
     "sassy": {
@@ -62,6 +63,8 @@ STYLES = {
         )
     }
 }
+
+active_requests = {}
 
 def get_db_connection():
     try:
@@ -244,49 +247,49 @@ def delete_chat(chat_id):
     except Exception as e:
         logger.error(f"Ошибка удаления чата: {str(e)}")
 
-def get_openrouter_response(messages):
+async def get_io_response(messages, request_id):
     headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost",  # Замените на URL вашего приложения
-        "X-Title": "ZhenyaGPT"
+        "Authorization": f"Bearer {IO_API_KEY}",
+        "Content-Type": "application/json"
     }
     data = {
-        "model": OPENROUTER_MODEL,
+        "model": IO_MODEL,
         "messages": messages,
         "max_tokens": 1500,
         "temperature": 0.9,
         "top_p": 0.95
     }
-    try:
-        # Синхронный запрос, так как Flask не поддерживает await без ASGI
-        import requests
-        response = requests.post(OPENROUTER_API_URL, json=data, headers=headers, timeout=30)
-        if response.status_code != 200:
-            error_text = response.text
-            logger.error(f"Ошибка API: {response.status_code} - {error_text}")
-            return f"Ошибка API: {error_text}"
-        raw_response = response.json()["choices"][0]["message"]["content"]
-        clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
-        logger.debug(f"Получен ответ от API: {clean_response[:50]}...")
-        return clean_response
-    except requests.Timeout:
-        logger.error("Превышено время ожидания ответа от API")
-        return "Ошибка: Превышено время ожидания ответа от API."
-    except Exception as e:
-        logger.error(f"Ошибка при запросе к API: {str(e)}")
-        return f"Ошибка при запросе к API: {str(e)}"
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(IO_API_URL, json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if request_id not in active_requests:
+                    logger.info(f"Запрос {request_id} был отменён")
+                    return None
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Ошибка API: {response.status} - {error_text}")
+                    return f"Ошибка API: {error_text}"
+                raw_response = (await response.json())["choices"][0]["message"]["content"]
+                clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
+                logger.debug(f"Получен ответ от API: {clean_response[:50]}...")
+                return clean_response
+        except asyncio.TimeoutError:
+            logger.error("Превышено время ожидания ответа от API")
+            return "Ошибка: Превышено время ожидания ответа от API."
+        except Exception as e:
+            logger.error(f"Ошибка при запросе к API: {str(e)}")
+            return f"Ошибка при запросе к API: {str(e)}"
 
-def generate_chat_title(user_input):
+async def generate_chat_title(user_input, request_id):
     prompt = {
         "role": "system",
         "content": "Ты — помощник, который генерирует короткие названия для чатов (до 30 символов) на основе первого сообщения пользователя. Название должно быть понятным и отражать суть сообщения. Ответь только названием, без лишнего текста."
     }
     messages = [prompt, {"role": "user", "content": f"Сгенерируй название для чата на основе этого сообщения: {user_input}"}]
-    title = get_openrouter_response(messages)
+    title = await get_io_response(messages, request_id)
     if not title or "Ошибка" in title:
-        return user_input[:30]  # Запасной вариант
-    return title[:30]
+        return user_input[:30]  # Запасной вариант, если ИИ не справился
+    return title[:30]  # Ограничиваем до 30 символов
 
 @app.before_request
 def require_login():
@@ -361,7 +364,7 @@ def change_style():
     return redirect(url_for("index"))
 
 @app.route("/", methods=["GET", "POST"])
-def index():
+async def index():
     try:
         user_id = session['user_id']
         if 'chats' not in session:
@@ -386,27 +389,43 @@ def index():
             logger.debug(f"Получен запрос от пользователя {user_id}: {user_input}")
             add_message(chat_id, "user", user_input)
 
-            # Генерируем название чата, если это первое сообщение
+            # Генерируем название чата от ИИ, если это первое сообщение
             if not history:
-                title = generate_chat_title(user_input)
-                update_chat_title(chat_id, title)
-                session['chats'][chat_id]['title'] = title
+                request_id = str(uuid.uuid4())
+                active_requests[request_id] = True
+                title_task = asyncio.create_task(generate_chat_title(user_input, request_id))
+                title = await title_task
+                if title and request_id in active_requests:
+                    update_chat_title(chat_id, title)
+                    session['chats'][chat_id]['title'] = title
+                if request_id in active_requests:
+                    del active_requests[request_id]
 
             # Обрабатываем основной запрос
             max_history_length = 3
             truncated_history = history[-max_history_length:] if len(history) > max_history_length else history
             messages = [STYLES[current_style]] + truncated_history + [{"role": "user", "content": user_input}]
-            ai_reply = get_openrouter_response(messages)
-            
-            # Проверяем, содержит ли ответ ошибку
-            if "Ошибка" in ai_reply:
-                logger.error(f"Ошибка в ответе API: {ai_reply}")
-                return jsonify({"ai_response": ai_reply}), 500
-            
-            add_message(chat_id, "assistant", ai_reply)
-            session['chats'] = get_all_chats(user_id)  # Обновляем кэш
-            logger.debug(f"Успешный ответ: {ai_reply[:50]}...")
-            return jsonify({"ai_response": ai_reply, "chats": session['chats']})
+            request_id = str(uuid.uuid4())
+            active_requests[request_id] = True
+            task = asyncio.create_task(get_io_response(messages, request_id))
+            active_requests[request_id] = task
+
+            try:
+                ai_reply = await task
+                if ai_reply and request_id in active_requests:
+                    add_message(chat_id, "assistant", ai_reply)
+                    session['chats'] = get_all_chats(user_id)  # Обновляем кэш
+                    logger.debug(f"Успешный ответ для {request_id}: {ai_reply[:50]}...")
+                    return jsonify({"ai_response": ai_reply, "chats": session['chats']})
+                else:
+                    logger.info(f"Запрос {request_id} отменён или не выполнен")
+                    return jsonify({"ai_response": "Ответ был отменён или не выполнен."}), 400
+            except asyncio.CancelledError:
+                logger.info(f"Запрос {request_id} отменён")
+                return jsonify({"ai_response": "Ответ был отменён."}), 400
+            finally:
+                if request_id in active_requests:
+                    del active_requests[request_id]
 
         return render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id, 
                               current_style=current_style, styles=STYLES.keys())
@@ -418,8 +437,9 @@ def index():
 def new_chat():
     user_id = session['user_id']
     chat_id = str(uuid.uuid4())
-    add_chat(chat_id, user_id)
+    add_chat(chat_id, user_id)  # Создаём чат с текущим last_active
     session["active_chat"] = chat_id
+    # Обновляем весь список чатов, чтобы порядок был правильным
     session['chats'] = get_all_chats(user_id)
     logger.info(f"Создан новый чат {chat_id} для пользователя {user_id}")
     return redirect(url_for("index"))
@@ -462,6 +482,16 @@ def delete_chat_route(chat_id):
         logger.info(f"Чат {chat_id} удалён для пользователя {user_id}")
     return redirect(url_for("index"))
 
+@app.route("/stop_response", methods=["POST"])
+def stop_response():
+    for request_id in list(active_requests.keys()):
+        task = active_requests.get(request_id)
+        if task and not task.done():
+            task.cancel()
+        active_requests[request_id] = False
+    logger.info("Все активные запросы остановлены")
+    return jsonify({"status": "stopped"})
+
 @app.route("/clear_session")
 def clear_session():
     session.clear()
@@ -469,4 +499,6 @@ def clear_session():
     return redirect(url_for("login"))
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    import uvicorn
+    port = int(os.environ.get("PORT", 5000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, log_level="debug")
