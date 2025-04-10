@@ -1,7 +1,7 @@
 flask
-aiohttp
-asyncio
 psycopg2-binary
 werkzeug
-uvicorn
 openai
+aiohttp
+uvicorn
+asgiref
