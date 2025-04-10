@@ -7,3 +7,4 @@ psycopg2-binary>=2.9.9
 requests==2.31.0
 uvicorn==0.34.0
 asyncpg>=0.27.0
+Flask-Caching>=2.0.2
