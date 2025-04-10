@@ -7,9 +7,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import logging
 import asyncio
-import aiohttp
-import re
-from asgiref.wsgi import WsgiToAsgi  # Добавляем адаптер WSGI-to-ASGI
+from asgiref.wsgi import WsgiToAsgi
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
@@ -18,10 +16,17 @@ app.secret_key = os.getenv("SECRET_KEY", "zhenya-secret-key")
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Считываем API-ключ и логируем его для отладки
+api_key = os.getenv("OPENROUTER_API_KEY")
+if not api_key:
+    logger.error("OPENROUTER_API_KEY не найден в переменных окружения!")
+else:
+    logger.info(f"OPENROUTER_API_KEY успешно считан: {api_key[:10]}... (первые 10 символов)")
+
 # API настройки для OpenRouter
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
-    api_key=os.getenv("OPENROUTER_API_KEY", "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")
+    api_key=api_key if api_key else "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"  # Запасной ключ только если переменная не задана
 )
 
 IO_MODEL = "google/gemma-2-9b-it:free"
@@ -253,10 +258,6 @@ def get_response_from_api(chat_history, user_input, style):
         messages = [STYLES[style]] + truncated_history + [{"role": "user", "content": user_input}]
 
         completion = client.chat.completions.create(
-            extra_headers={
-                "HTTP-Referer": "http://127.0.0.1:5000",
-                "X-Title": "ZhenyaGPT"
-            },
             model=IO_MODEL,
             messages=messages,
             max_tokens=1500,
@@ -273,40 +274,28 @@ def get_response_from_api(chat_history, user_input, style):
         return f"Ошибка: {str(e)}"
 
 async def generate_chat_title(user_input, request_id):
-    headers = {
-        "Authorization": f"Bearer {client.api_key}",
-        "Content-Type": "application/json"
-    }
-    data = {
-        "model": IO_MODEL,
-        "messages": [
-            {"role": "system", "content": "Ты — помощник, который генерирует короткие названия для чатов (до 30 символов) на основе первого сообщения пользователя. Название должно быть понятным и отражать суть сообщения. Ответь только названием, без лишнего текста."},
-            {"role": "user", "content": f"Сгенерируй название для чата на основе этого сообщения: {user_input}"}
-        ],
-        "max_tokens": 30,
-        "temperature": 0.9,
-        "top_p": 0.95
-    }
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post("https://openrouter.ai/api/v1/chat/completions", json=data, headers=headers, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if request_id not in active_requests:
-                    logger.info(f"Запрос {request_id} был отменён")
-                    return None
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Ошибка API: {response.status} - {error_text}")
-                    return f"Ошибка API: {error_text}"
-                raw_response = (await response.json())["choices"][0]["message"]["content"]
-                clean_response = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
-                logger.debug(f"Получен заголовок от API: {clean_response[:50]}...")
-                return clean_response[:30]
-        except asyncio.TimeoutError:
-            logger.error("Превышено время ожидания ответа от API")
-            return user_input[:30]
-        except Exception as e:
-            logger.error(f"Ошибка при запросе к API для заголовка: {str(e)}")
-            return user_input[:30]
+    try:
+        if request_id not in active_requests:
+            logger.info(f"Запрос {request_id} был отменён")
+            return None
+        
+        completion = client.chat.completions.create(
+            model=IO_MODEL,
+            messages=[
+                {"role": "system", "content": "Ты — помощник, который генерирует короткие названия для чатов (до 30 символов) на основе первого сообщения пользователя. Название должно быть понятным и отражать суть сообщения. Ответь только названием, без лишнего текста."},
+                {"role": "user", "content": f"Сгенерируй название для чата на основе этого сообщения: {user_input}"}
+            ],
+            max_tokens=30,
+            temperature=0.9,
+            top_p=0.95
+        )
+        
+        title = completion.choices[0].message.content.strip()
+        logger.debug(f"Получен заголовок от API: {title[:50]}...")
+        return title[:30]
+    except Exception as e:
+        logger.error(f"Ошибка при запросе к API для заголовка: {str(e)}")
+        return user_input[:30]
 
 @app.before_request
 def require_login():
