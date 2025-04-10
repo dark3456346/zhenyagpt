@@ -397,14 +397,16 @@ def index():
             truncated_history = history[-max_history_length:] if len(history) > max_history_length else history
             messages = [STYLES[current_style]] + truncated_history + [{"role": "user", "content": user_input}]
             ai_reply = get_openrouter_response(messages)
-            if ai_reply:
-                add_message(chat_id, "assistant", ai_reply)
-                session['chats'] = get_all_chats(user_id)  # Обновляем кэш
-                logger.debug(f"Успешный ответ: {ai_reply[:50]}...")
-                return jsonify({"ai_response": ai_reply, "chats": session['chats']})
-            else:
-                logger.info("Ответ не получен")
-                return jsonify({"ai_response": "Ответ не получен."}), 400
+            
+            # Проверяем, содержит ли ответ ошибку
+            if "Ошибка" in ai_reply:
+                logger.error(f"Ошибка в ответе API: {ai_reply}")
+                return jsonify({"ai_response": ai_reply}), 500
+            
+            add_message(chat_id, "assistant", ai_reply)
+            session['chats'] = get_all_chats(user_id)  # Обновляем кэш
+            logger.debug(f"Успешный ответ: {ai_reply[:50]}...")
+            return jsonify({"ai_response": ai_reply, "chats": session['chats']})
 
         return render_template("index.html", history=history, chats=session['chats'], active_chat=chat_id, 
                               current_style=current_style, styles=STYLES.keys())
