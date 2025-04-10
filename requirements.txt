@@ -1,6 +1,6 @@
 flask
-requests
+aiohttp
+asyncio
 psycopg2-binary
 werkzeug
-gunicorn
-aiohttp
+uvicorn
